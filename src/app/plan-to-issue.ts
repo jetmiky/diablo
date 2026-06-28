@@ -47,7 +47,9 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     skills: config.skills.worker,
     instruction:
       `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
-      `Follow the plan's tasks and acceptance criteria, and the TDD skill.`,
+      `Follow the plan's tasks and acceptance criteria, and the TDD skill's red-green-refactor discipline. ` +
+      `Work autonomously: do NOT ask for approval or confirmation — there is no human to answer. ` +
+      `Implement the code and tests directly, and run the tests yourself before finishing.`,
     commitMessage: `feat(${config.issue}): stage ${stage.number} - ${stage.title}`,
   };
 

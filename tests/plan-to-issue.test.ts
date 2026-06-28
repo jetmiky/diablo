@@ -94,6 +94,14 @@ describe("planToIssue", () => {
     expect(worker.instruction).toContain("T-001");
   });
 
+  test("the worker instruction tells it to execute autonomously without asking for approval", () => {
+    const worker = planToIssue(plan, config).stages[0]!.steps[0]!;
+    // The TDD skill has interactive 'get user approval' checkpoints; a headless
+    // worker must override them and implement directly, or it stalls waiting for
+    // input that never comes. The human checkpoint is diablo's gate after commit.
+    expect(worker.instruction.toLowerCase()).toMatch(/autonomous|do not ask|without asking|no approval/);
+  });
+
   test("the verifier instruction asks for a verdict against acceptance criteria", () => {
     const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
     expect(verifier.instruction.toLowerCase()).toMatch(/verif|verdict|acceptance/);
