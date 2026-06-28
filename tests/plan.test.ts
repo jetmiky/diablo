@@ -86,4 +86,40 @@ describe("parsePlan", () => {
     const bad = `## Stages\n\n### Stage 1 - Empty\n\nnothing\n`;
     expect(() => parsePlan(bad)).toThrow(/stage 1.*no tasks/i);
   });
+
+  test("accepts stage headings at H2, H3, or H4 (heading level varies in practice)", () => {
+    const h2 = `## Stage 1 - Scaffold
+
+[T-001] - Do a thing
+- Objective: do it
+- Target Files: src/a.ts
+- Dependency: None
+- Acceptance Criterias:
+  - it works
+`;
+    const plan = parsePlan(h2);
+    expect(plan.stages).toHaveLength(1);
+    expect(plan.stages[0]!.number).toBe(1);
+    expect(plan.stages[0]!.title).toBe("Scaffold");
+    expect(plan.stages[0]!.tasks[0]!.id).toBe("T-001");
+  });
+
+  test("does not treat a non-stage ## heading as a stage", () => {
+    const withIntro = `## Overview
+
+Some prose.
+
+## Stage 1 - Real
+
+[T-001] - Do a thing
+- Objective: do it
+- Target Files: src/a.ts
+- Dependency: None
+- Acceptance Criterias:
+  - it works
+`;
+    const plan = parsePlan(withIntro);
+    expect(plan.stages).toHaveLength(1);
+    expect(plan.stages[0]!.title).toBe("Real");
+  });
 });

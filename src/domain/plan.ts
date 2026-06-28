@@ -35,7 +35,7 @@ export interface Plan {
   stages: PlanStage[];
 }
 
-const STAGE_RE = /^###\s+Stage\s+(\d+)\s*-\s*(.+?)\s*$/;
+const STAGE_RE = /^#{2,4}\s+Stage\s+(\d+)\s*-\s*(.+?)\s*$/;
 const TASK_RE = /^\[(T-\d+)\]\s*-\s*(.+?)\s*$/;
 const FIELD_RE = /^-\s*(Objective|Target Files|Dependency|Acceptance Criterias)\s*:\s*(.*)$/;
 const BULLET_RE = /^\s*-\s+(.*\S)\s*$/;
