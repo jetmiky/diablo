@@ -5,7 +5,10 @@
  * GitCli, StdinGate) are assembled here and injected into the use-cases.
  */
 import { parseArgs } from "./args.ts";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { resolveSkillsDir, skillFile } from "../domain/skills-path.ts";
 import { PiAgent } from "../adapters/pi-agent.ts";
 import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
@@ -30,7 +33,15 @@ Run options:
   --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
 `;
 
-const SKILLS_DIR = `${process.env.HOME}/.agents/skills`;
+/**
+ * The vendored skills directory, resolved from THIS module's own location (not
+ * the target project's cwd). `diablo run` executes inside an arbitrary project,
+ * so the skills must be found relative to the diablo package — walking up from
+ * the compiled module (dist/) or the source module (src/cli/) until `skills/`
+ * is found. This is what makes a fresh clone / npm install self-contained.
+ */
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const SKILLS_DIR = resolveSkillsDir(MODULE_DIR, (p) => existsSync(p));
 
 /**
  * Resolves a ticket location into concrete file paths for @-injection. Pi's
@@ -108,8 +119,8 @@ function buildRunConfig(repoRoot: string, issue: string): RunDiabloConfig {
     ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
-      planner: [`${SKILLS_DIR}/master-plan/SKILL.md`],
-      worker: [`${SKILLS_DIR}/tdd/SKILL.md`],
+      planner: [skillFile(SKILLS_DIR, "master-plan")],
+      worker: [skillFile(SKILLS_DIR, "tdd")],
       verifier: [],
     },
   };
