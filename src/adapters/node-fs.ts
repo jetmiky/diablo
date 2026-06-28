@@ -3,7 +3,7 @@
  * directories so callers can target nested paths (e.g. .plans/<feature>-plan.md)
  * without pre-creating dirs. Validated by the CLI path, not unit tests.
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { FsPort } from "../ports/fs.ts";
 
@@ -18,8 +18,10 @@ export class NodeFs implements FsPort {
   }
 
   async exists(path: string): Promise<boolean> {
+    // Use stat, not readFile: readFile throws EISDIR on a directory, which
+    // would wrongly report an existing worktree dir as absent.
     try {
-      await readFile(path);
+      await stat(path);
       return true;
     } catch {
       return false;
