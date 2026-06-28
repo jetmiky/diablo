@@ -61,12 +61,19 @@ function designNotePath(config: PlanToIssueConfig, stageId: string): string {
   return `${config.worktree}/.plans/${config.issue}-${stageId}-design.md`;
 }
 
+const EMPTY_SUITE_NOTE =
+  `Treat an EMPTY test suite as success, not failure: if the test runner reports "no tests ` +
+  `found" (or exits non-zero ONLY because zero tests exist), that is NOT a FAIL — early stages ` +
+  `in a TDD-staged plan legitimately precede their tests. Only an actually failing or erroring ` +
+  `test counts as a FAIL. `;
+
 const VERDICT_INSTRUCTION =
+  EMPTY_SUITE_NOTE +
   `End your reply with a single line: exactly "VERDICT: PASS" if the typecheck is clean, the ` +
-  `full test suite passes, and the acceptance criteria are met. Otherwise end with ` +
-  `"VERDICT: FAIL [implementation]" if the code is at fault (a fix to the code can satisfy the ` +
-  `plan), or "VERDICT: FAIL [plan]" if the plan itself is wrong (it cannot be satisfied as ` +
-  `specified) — followed by a short list of what must change.`;
+  `test suite passes (or is empty/not-yet-present), and the acceptance criteria are met. ` +
+  `Otherwise end with "VERDICT: FAIL [implementation]" if the code is at fault (a fix to the ` +
+  `code can satisfy the plan), or "VERDICT: FAIL [plan]" if the plan itself is wrong (it cannot ` +
+  `be satisfied as specified) — followed by a short list of what must change.`;
 
 function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
   const stageId = `stage-${stage.number}`;

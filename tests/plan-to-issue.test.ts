@@ -164,6 +164,15 @@ describe("planToIssue", () => {
     expect(verifier.instruction).toMatch(/\[plan\]/);
   });
 
+  test("the verifier instruction treats an empty test suite as not-a-failure", () => {
+    // In a TDD-staged plan a scaffold stage legitimately has no tests yet, and
+    // `bun test` exits non-zero with "no tests found". That is NOT a stage
+    // failure — only an actual failing/erroring test is. Without this the very
+    // first stage can never pass.
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier")!;
+    expect(verifier.instruction.toLowerCase()).toMatch(/no tests|empty|not yet|absen/);
+  });
+
   test("the per-stage verifier runs on the verifier tier (cheap, frequent)", () => {
     const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier");
     expect(verifier).toBeDefined();
