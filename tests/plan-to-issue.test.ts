@@ -123,6 +123,14 @@ describe("planToIssue", () => {
     expect(verifier.instruction).toMatch(/VERDICT:\s*PASS/);
     expect(verifier.instruction).toMatch(/VERDICT:\s*FAIL/);
   });
+
+  test("the verifier instruction asks for the FAIL category (implementation vs plan)", () => {
+    // The category drives retry routing: [implementation] retries the worker,
+    // [plan] halts to a human.
+    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    expect(verifier.instruction).toMatch(/\[implementation\]/);
+    expect(verifier.instruction).toMatch(/\[plan\]/);
+  });
 });
 
 describe("planToIssue verification stages", () => {

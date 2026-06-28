@@ -10,10 +10,13 @@ import type { GitPort } from "../ports/git.ts";
 import type { FsPort } from "../ports/fs.ts";
 import { loadIssue, type LoadIssueConfig } from "./load-issue.ts";
 import { runIssue, type IssueResult } from "./run-issue.ts";
+import type { RetryPolicy } from "./run-stage.ts";
 import type { GatePort } from "../ports/gate.ts";
 
 export interface RunDiabloConfig extends LoadIssueConfig {
   baseBranch: string;
+  /** Bounded worker-retry policy on implementation FAIL; default no retry. */
+  retry?: RetryPolicy;
 }
 
 export interface RunDiabloDeps {
@@ -30,5 +33,9 @@ export async function runDiablo(deps: RunDiabloDeps, config: RunDiabloConfig): P
 
   const issue = await loadIssue(deps, config);
 
-  return runIssue({ agent: deps.agent, git: deps.git, gate: deps.gate }, issue);
+  return runIssue(
+    { agent: deps.agent, git: deps.git, gate: deps.gate },
+    issue,
+    config.retry ?? { limit: 0 },
+  );
 }

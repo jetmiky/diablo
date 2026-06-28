@@ -65,9 +65,11 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
       `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
       `they output. A type error or a failing test — anywhere, including in test files — is a ` +
       `FAIL. Do not modify code. ` +
-      `End your reply with a single line, exactly "VERDICT: PASS" if the typecheck is clean, the ` +
-      `full test suite passes, and the acceptance criteria are met, or "VERDICT: FAIL" otherwise ` +
-      `followed by a short list of what must change.`,
+      `End your reply with a single line: exactly "VERDICT: PASS" if the typecheck is clean, the ` +
+      `full test suite passes, and the acceptance criteria are met. Otherwise end with ` +
+      `"VERDICT: FAIL [implementation]" if the code is at fault (a fix to this stage's code can ` +
+      `satisfy the plan), or "VERDICT: FAIL [plan]" if the plan itself is wrong (the stage cannot ` +
+      `be satisfied as specified) — followed by a short list of what must change.`,
     // No commitMessage: a verifier only reads and returns a verdict.
   };
 

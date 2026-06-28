@@ -10,7 +10,7 @@
  * is unit-tested against fakes. Progress-tracker writing (progress.md) is I/O
  * and layers on later as an injected port, not baked into this loop.
  */
-import { runStage, type Stage, type StageResult } from "./run-stage.ts";
+import { runStage, type Stage, type StageResult, type RetryPolicy } from "./run-stage.ts";
 import type { RunStepDeps } from "./run-step.ts";
 
 export interface Issue {
@@ -24,12 +24,16 @@ export interface IssueResult {
   commit?: string;
 }
 
-export async function runIssue(deps: RunStepDeps, issue: Issue): Promise<IssueResult> {
+export async function runIssue(
+  deps: RunStepDeps,
+  issue: Issue,
+  retry: RetryPolicy = { limit: 0 },
+): Promise<IssueResult> {
   const stages: StageResult[] = [];
   let commit: string | undefined;
 
   for (const stage of issue.stages) {
-    const result = await runStage(deps, stage);
+    const result = await runStage(deps, stage, retry);
     stages.push(result);
     if (result.commit !== undefined) {
       commit = result.commit;

@@ -108,12 +108,18 @@ function buildOverrides(models: ConfigModels): ModelOverrides {
   };
 }
 
-function buildRunConfig(repoRoot: string, issue: string, skillsDir: string): RunDiabloConfig {
+function buildRunConfig(
+  repoRoot: string,
+  issue: string,
+  skillsDir: string,
+  retry: { limit: number },
+): RunDiabloConfig {
   const worktree = `${repoRoot}/.worktrees/${issue}`;
   return {
     issue,
     baseBranch: "main",
     worktree,
+    retry,
     ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
@@ -170,7 +176,7 @@ async function main(argv: string[]): Promise<number> {
       const skillsDir = config.skillsDir ?? SKILLS_DIR;
       const runId = newRunId();
       const deps = buildDeps(repoRoot, overrides, runId);
-      const runConfig = buildRunConfig(repoRoot, parsed.issue, skillsDir);
+      const runConfig = buildRunConfig(repoRoot, parsed.issue, skillsDir, config.retry);
       try {
         const result = await runDiablo(deps, runConfig);
         process.stdout.write(
