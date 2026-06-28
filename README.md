@@ -30,6 +30,27 @@ Early development. Building the core step-execution primitive first (sequential,
 | worker | `kr/claude-sonnet-4.5` | medium | implementation |
 | verifier | `kr/claude-sonnet-4.5` | medium | per-stage verification |
 
+## Configure
+
+`diablo init` scaffolds a minimal `diablo.config.json`, runs the skill setup, and
+(opt-in) offers to bootstrap `git`/`husky`/`commitlint`. Config is optional —
+diablo runs with built-in defaults when no file is present.
+
+```jsonc
+{
+  "models":      { "planner": "claude-opus-4.8", "worker": "claude-sonnet-4.5", "verifier": "claude-sonnet-4.5" },
+  "integration": { "targetBranch": "main", "branchPrefix": "diablo/", "autoMerge": false },
+  "gate":        "approval",
+  "retry":       { "limit": 2 }
+}
+```
+
+Model selection follows three layers, each overriding the one before:
+
+```
+built-in defaults  ←  diablo.config.json  ←  CLI flag (--planner-model, ...)
+```
+
 ## Develop
 
 ```bash

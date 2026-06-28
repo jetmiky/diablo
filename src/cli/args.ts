@@ -14,6 +14,7 @@ export type ParsedArgs =
     }
   | { command: "version" }
   | { command: "help" }
+  | { command: "init" }
   | { command: "error"; message: string };
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -25,6 +26,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   if (first === "--version" || first === "-v") {
     return { command: "version" };
+  }
+
+  if (first === "init") {
+    if (rest.length > 0) {
+      return { command: "error", message: "init takes no arguments: diablo init" };
+    }
+    return { command: "init" };
   }
 
   if (first === "run") {

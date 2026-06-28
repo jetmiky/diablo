@@ -15,6 +15,10 @@ import { GitCli } from "../adapters/git-cli.ts";
 import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps } from "../app/run-diablo.ts";
+import { loadConfig } from "../app/load-config.ts";
+import { initDiablo } from "../app/init-diablo.ts";
+import { resolveModels, type ConfigModels } from "../domain/config.ts";
+import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
 
@@ -23,15 +27,18 @@ const VERSION = "0.1.0";
 const HELP = `diablo ${VERSION} — a skill-driven Pi conductor
 
 Usage:
+  diablo init            Scaffold diablo.config.json and set up skills
   diablo run <issue>     Run an issue's stages through the agent pipeline
   diablo --version       Print the version
   diablo --help          Show this help
 
-Run options:
+Run options (override diablo.config.json, which overrides built-in defaults):
   --planner-model <m>    Override the planner model (e.g. claude-sonnet-4.5)
   --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
   --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
 `;
+
+const CONFIG_FILENAME = "diablo.config.json";
 
 /**
  * The vendored skills directory, resolved from THIS module's own location (not
@@ -86,31 +93,22 @@ function newRunId(): string {
 }
 
 /**
- * Builds per-tier model overrides from the run flags. Only the model name is
+ * Builds per-tier model overrides from the RESOLVED model names (built-in <-
+ * config <- CLI flag, computed by resolveModels). Only the model name is
  * swapped; each tier keeps its default thinking level (planner-high → high,
- * worker → medium), so a cheap run can point a tier at a smaller model without
- * losing the tier's thinking budget.
+ * planner-med → medium, worker/verifier → medium), so pointing a tier at a
+ * smaller model never loses the tier's thinking budget.
  */
-function buildOverrides(
-  plannerModel?: string,
-  workerModel?: string,
-  verifierModel?: string,
-): ModelOverrides {
-  const overrides: ModelOverrides = {};
-  if (plannerModel !== undefined) {
-    overrides["planner-high"] = { model: plannerModel, thinking: "high" };
-    overrides["planner-med"] = { model: plannerModel, thinking: "medium" };
-  }
-  if (workerModel !== undefined) {
-    overrides.worker = { model: workerModel, thinking: "medium" };
-  }
-  if (verifierModel !== undefined) {
-    overrides.verifier = { model: verifierModel, thinking: "medium" };
-  }
-  return overrides;
+function buildOverrides(models: ConfigModels): ModelOverrides {
+  return {
+    "planner-high": { model: models.planner, thinking: "high" },
+    "planner-med": { model: models.planner, thinking: "medium" },
+    worker: { model: models.worker, thinking: "medium" },
+    verifier: { model: models.verifier, thinking: "medium" },
+  };
 }
 
-function buildRunConfig(repoRoot: string, issue: string): RunDiabloConfig {
+function buildRunConfig(repoRoot: string, issue: string, skillsDir: string): RunDiabloConfig {
   const worktree = `${repoRoot}/.worktrees/${issue}`;
   return {
     issue,
@@ -119,8 +117,8 @@ function buildRunConfig(repoRoot: string, issue: string): RunDiabloConfig {
     ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
-      planner: [skillFile(SKILLS_DIR, "master-plan")],
-      worker: [skillFile(SKILLS_DIR, "tdd")],
+      planner: [skillFile(skillsDir, "master-plan")],
+      worker: [skillFile(skillsDir, "tdd")],
       verifier: [],
     },
   };
@@ -142,17 +140,39 @@ async function main(argv: string[]): Promise<number> {
       process.stderr.write(`error: ${parsed.message}\n\n${HELP}`);
       return 2;
 
-    case "run": {
-      const overrides = buildOverrides(
-        parsed.plannerModel,
-        parsed.workerModel,
-        parsed.verifierModel,
+    case "init": {
+      const repoRoot = process.cwd();
+      const configPath = `${repoRoot}/${CONFIG_FILENAME}`;
+      const runner = new NodeProcessRunner();
+      const piBinary = `${process.env.HOME}/.bun/bin/pi`;
+      await initDiablo(
+        {
+          fs: new NodeFs(),
+          prompt: new StdinPrompt(),
+          setupSkills: () => runSetupSkills(piBinary, runner, repoRoot),
+          bootstrap: () => bootstrapTooling(runner, repoRoot),
+        },
+        { configPath },
       );
+      process.stdout.write(`\n✅ diablo initialized in ${repoRoot}\n`);
+      return 0;
+    }
+
+    case "run": {
+      const repoRoot = process.cwd();
+      const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
+      const models = resolveModels(config, {
+        plannerModel: parsed.plannerModel,
+        workerModel: parsed.workerModel,
+        verifierModel: parsed.verifierModel,
+      });
+      const overrides = buildOverrides(models);
+      const skillsDir = config.skillsDir ?? SKILLS_DIR;
       const runId = newRunId();
-      const deps = buildDeps(process.cwd(), overrides, runId);
-      const config = buildRunConfig(process.cwd(), parsed.issue);
+      const deps = buildDeps(repoRoot, overrides, runId);
+      const runConfig = buildRunConfig(repoRoot, parsed.issue, skillsDir);
       try {
-        const result = await runDiablo(deps, config);
+        const result = await runDiablo(deps, runConfig);
         process.stdout.write(
           `\n✅ issue ${parsed.issue} complete` +
             (result.commit ? ` — final commit ${result.commit.slice(0, 10)}` : "") +
@@ -168,6 +188,46 @@ async function main(argv: string[]): Promise<number> {
       }
     }
   }
+}
+
+/**
+ * Runs the interactive setup-matt-pocock-skills flow. This is the ONE place
+ * interactivity is appropriate (Socratic setup), so it runs an INTERACTIVE Pi
+ * session (inherited stdio), not a headless `-p` run. The vendored skill is
+ * injected as an @file reference.
+ */
+async function runSetupSkills(
+  piBinary: string,
+  runner: NodeProcessRunner,
+  repoRoot: string,
+): Promise<void> {
+  process.stdout.write("\nSetting up engineering skills (interactive)...\n");
+  const skill = skillFile(SKILLS_DIR, "setup-matt-pocock-skills");
+  await runner.run(
+    piBinary,
+    [`@${skill}`, "Set up the engineering skills for this project following the skill."],
+    repoRoot,
+  );
+}
+
+/**
+ * Bootstraps Node-based dev tooling: git init (if not already a repo), husky,
+ * and commitlint. Best-effort and idempotent; invoked only when the user
+ * opted in during init. Errors surface to the caller so a failed bootstrap is
+ * visible rather than silently swallowed.
+ */
+async function bootstrapTooling(runner: NodeProcessRunner, repoRoot: string): Promise<void> {
+  process.stdout.write("\nBootstrapping git/husky/commitlint...\n");
+  const isRepo = existsSync(`${repoRoot}/.git`);
+  if (!isRepo) {
+    await runner.run("git", ["init"], repoRoot);
+  }
+  await runner.run(
+    "npm",
+    ["install", "--save-dev", "husky", "@commitlint/cli", "@commitlint/config-conventional"],
+    repoRoot,
+  );
+  await runner.run("npx", ["husky", "init"], repoRoot);
 }
 
 main(process.argv.slice(2))

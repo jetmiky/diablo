@@ -67,6 +67,15 @@ export function modelFor(tier: Tier, overrides: ModelOverrides = {}): string {
   return `${PROVIDER}/${spec.model}:${spec.thinking}`;
 }
 
+/**
+ * The built-in default model NAME for a tier (no provider/thinking suffix).
+ * The single source of truth the config loader reads its model defaults from,
+ * so config defaults and the run-spec tier table can never silently diverge.
+ */
+export function defaultModelName(tier: Tier): string {
+  return TIER_MODELS[tier].model;
+}
+
 export function sessionIdFor(spec: RunSpec): string {
   const role = TIER_ROLES[spec.tier];
   const run = spec.runId ? `${spec.runId}-` : "";

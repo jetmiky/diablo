@@ -94,4 +94,16 @@ describe("parseArgs", () => {
       expect(parsed.message).toMatch(/worker-model/i);
     }
   });
+
+  test("parses the init command", () => {
+    expect(parseArgs(["init"])).toEqual({ command: "init" });
+  });
+
+  test("init takes no positional args (extra args are an error)", () => {
+    const parsed = parseArgs(["init", "extra"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/init/i);
+    }
+  });
 });
