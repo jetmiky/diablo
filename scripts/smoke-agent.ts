@@ -1,5 +1,5 @@
 /**
- * Live smoke test for the AgentPort chain (PiAgent -> BunProcessRunner ->
+ * Live smoke test for the AgentPort chain (PiAgent -> NodeProcessRunner ->
  * parsePiResult) against a REAL pi process with sonnet-4.5.
  *
  * Not part of `bun test` (costs tokens, needs network). Run manually:
@@ -10,7 +10,7 @@
  * reply confirms the @file injection + model selection round-tripped.
  */
 import { PiAgent } from "../src/adapters/pi-agent.ts";
-import { BunProcessRunner } from "../src/adapters/bun-process-runner.ts";
+import { NodeProcessRunner } from "../src/adapters/node-process-runner.ts";
 import type { RunSpec } from "../src/domain/run-spec.ts";
 
 const PI = `${process.env.HOME}/.bun/bin/pi`;
@@ -27,7 +27,7 @@ const spec: RunSpec = {
 
 console.log("Spawning real pi (worker tier = sonnet-4.5:medium)...");
 const start = Date.now();
-const agent = new PiAgent(PI, new BunProcessRunner());
+const agent = new PiAgent(PI, new NodeProcessRunner());
 
 try {
   const result = await agent.run(spec);

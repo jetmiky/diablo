@@ -1,7 +1,7 @@
 /**
  * GitCli is the real GitPort: it shells out to git via an injected
  * ProcessRunner. The ProcessRunner seam keeps this logic unit-testable with a
- * fake; the live binding (BunProcessRunner) is used in production.
+ * fake; the live binding (NodeProcessRunner) is used in production.
  */
 import type { GitPort } from "../ports/git.ts";
 import type { ProcessRunner } from "../ports/agent.ts";

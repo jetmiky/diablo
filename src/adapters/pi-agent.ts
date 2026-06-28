@@ -4,7 +4,7 @@
  * the JSONL stdout into a structured result.
  *
  * The ProcessRunner seam keeps this logic unit-testable with a fake; the live
- * binding (BunProcessRunner) is exercised by the smoke test, not unit tests.
+ * binding (NodeProcessRunner) is exercised by the smoke test, not unit tests.
  */
 import type { AgentPort, ProcessRunner } from "../ports/agent.ts";
 import { buildPiArgs, type ModelOverrides, type RunSpec } from "../domain/run-spec.ts";

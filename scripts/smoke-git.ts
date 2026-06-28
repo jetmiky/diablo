@@ -12,9 +12,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitCli } from "../src/adapters/git-cli.ts";
-import { BunProcessRunner } from "../src/adapters/bun-process-runner.ts";
+import { NodeProcessRunner } from "../src/adapters/node-process-runner.ts";
 
-const runner = new BunProcessRunner();
+const runner = new NodeProcessRunner();
 const repo = await mkdtemp(join(tmpdir(), "diablo-git-smoke-"));
 
 async function git(args: string[], cwd: string) {

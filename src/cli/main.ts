@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Composition root for the diablo CLI. Wiring only — no business logic.
- * Parses argv, then dispatches. Real adapters (PiAgent + BunProcessRunner,
+ * Parses argv, then dispatches. Real adapters (PiAgent + NodeProcessRunner,
  * GitCli, StdinGate) are assembled here and injected into the use-cases.
  */
 import { parseArgs } from "./args.ts";
 import { readdirSync, statSync } from "node:fs";
 import { PiAgent } from "../adapters/pi-agent.ts";
-import { BunProcessRunner } from "../adapters/bun-process-runner.ts";
+import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
 import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
@@ -51,7 +51,7 @@ function resolveTicketPaths(location: string): string[] {
 }
 
 function buildDeps(repoRoot: string, overrides: ModelOverrides, runId: string): RunDiabloDeps {
-  const runner = new BunProcessRunner();
+  const runner = new NodeProcessRunner();
   const piBinary = `${process.env.HOME}/.bun/bin/pi`;
   return {
     agent: new PiAgent(piBinary, runner, overrides, runId),
