@@ -6,3 +6,6 @@ dist/
 # diablo runtime state (machine-managed, never hand-edited)
 .diablo/
 .worktrees/
+
+# local issue tracker / scratch tickets — working area, not version-controlled
+.scratch/
