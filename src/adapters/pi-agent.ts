@@ -7,17 +7,18 @@
  * binding (BunProcessRunner) is exercised by the smoke test, not unit tests.
  */
 import type { AgentPort, ProcessRunner } from "../ports/agent.ts";
-import { buildPiArgs, type RunSpec } from "../domain/run-spec.ts";
+import { buildPiArgs, type ModelOverrides, type RunSpec } from "../domain/run-spec.ts";
 import { parsePiResult, type PiResult } from "../domain/pi-result.ts";
 
 export class PiAgent implements AgentPort {
   constructor(
     private readonly piBinary: string,
     private readonly runner: ProcessRunner,
+    private readonly overrides: ModelOverrides = {},
   ) {}
 
   async run(spec: RunSpec): Promise<PiResult> {
-    const args = buildPiArgs(spec);
+    const args = buildPiArgs(spec, this.overrides);
     const outcome = await this.runner.run(this.piBinary, args, spec.worktree);
 
     if (outcome.exitCode !== 0) {

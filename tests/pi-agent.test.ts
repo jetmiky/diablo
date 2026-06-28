@@ -73,4 +73,15 @@ describe("PiAgent", () => {
     const agent = new PiAgent("pi", runner);
     await expect(agent.run(spec)).rejects.toThrow(/code 1.*boom: bad model/s);
   });
+
+  test("applies per-tier model overrides when constructed with them", async () => {
+    const runner = new FakeRunner({ stdout: agentEndLine, stderr: "", exitCode: 0 });
+    const agent = new PiAgent("pi", runner, {
+      worker: { model: "claude-haiku-4.5", thinking: "medium" },
+    });
+    await agent.run(spec);
+
+    const args = runner.calls[0]!.args;
+    expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-haiku-4.5:medium");
+  });
 });

@@ -5,6 +5,7 @@
  * GitCli, StdinGate) are assembled here and injected into the use-cases.
  */
 import { parseArgs } from "./args.ts";
+import { readdirSync, statSync } from "node:fs";
 import { PiAgent } from "../adapters/pi-agent.ts";
 import { BunProcessRunner } from "../adapters/bun-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
@@ -12,6 +13,7 @@ import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps } from "../app/run-diablo.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
+import type { ModelOverrides } from "../domain/run-spec.ts";
 
 const VERSION = "0.1.0";
 
@@ -21,19 +23,60 @@ Usage:
   diablo run <issue>     Run an issue's stages through the agent pipeline
   diablo --version       Print the version
   diablo --help          Show this help
+
+Run options:
+  --planner-model <m>    Override the planner model (e.g. claude-sonnet-4.5)
+  --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
 `;
 
 const SKILLS_DIR = `${process.env.HOME}/.agents/skills`;
 
-function buildDeps(repoRoot: string): RunDiabloDeps {
+/**
+ * Resolves a ticket location into concrete file paths for @-injection. Pi's
+ * @file reads files, not directories (a directory crashes it with EISDIR), so
+ * a directory is expanded to the .md files directly inside it.
+ */
+function resolveTicketPaths(location: string): string[] {
+  let isDir = false;
+  try {
+    isDir = statSync(location).isDirectory();
+  } catch {
+    return [location]; // let the downstream read surface a clear ENOENT
+  }
+  if (!isDir) return [location];
+  return readdirSync(location)
+    .filter((name) => name.endsWith(".md"))
+    .sort()
+    .map((name) => `${location}/${name}`);
+}
+
+function buildDeps(repoRoot: string, overrides: ModelOverrides): RunDiabloDeps {
   const runner = new BunProcessRunner();
   const piBinary = `${process.env.HOME}/.bun/bin/pi`;
   return {
-    agent: new PiAgent(piBinary, runner),
+    agent: new PiAgent(piBinary, runner, overrides),
     git: new GitCli(repoRoot, runner),
     fs: new NodeFs(),
     gate: new StdinGate(),
   };
+}
+
+/**
+ * Builds per-tier model overrides from the run flags. Only the model name is
+ * swapped; each tier keeps its default thinking level (planner-high → high,
+ * worker → medium), so a cheap run can point a tier at a smaller model without
+ * losing the tier's thinking budget.
+ */
+function buildOverrides(plannerModel?: string, workerModel?: string): ModelOverrides {
+  const overrides: ModelOverrides = {};
+  if (plannerModel !== undefined) {
+    overrides["planner-high"] = { model: plannerModel, thinking: "high" };
+    overrides["planner-med"] = { model: plannerModel, thinking: "medium" };
+  }
+  if (workerModel !== undefined) {
+    overrides.worker = { model: workerModel, thinking: "medium" };
+  }
+  return overrides;
 }
 
 function buildRunConfig(repoRoot: string, issue: string): RunDiabloConfig {
@@ -42,7 +85,7 @@ function buildRunConfig(repoRoot: string, issue: string): RunDiabloConfig {
     issue,
     baseBranch: "main",
     worktree,
-    ticketPaths: [`${repoRoot}/.scratch/${issue}`],
+    ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
       planner: [`${SKILLS_DIR}/master-plan/SKILL.md`],
@@ -69,7 +112,8 @@ async function main(argv: string[]): Promise<number> {
       return 2;
 
     case "run": {
-      const deps = buildDeps(process.cwd());
+      const overrides = buildOverrides(parsed.plannerModel, parsed.workerModel);
+      const deps = buildDeps(process.cwd(), overrides);
       const config = buildRunConfig(process.cwd(), parsed.issue);
       try {
         const result = await runDiablo(deps, config);

@@ -30,6 +30,13 @@ interface ModelSpec {
   thinking: "high" | "medium";
 }
 
+/**
+ * Per-tier model overrides for a single run. A tier present here replaces its
+ * default model+thinking; absent tiers keep the default. Used for cheap/toy
+ * runs (e.g. planner on sonnet, worker on haiku) without editing the defaults.
+ */
+export type ModelOverrides = Partial<Record<Tier, ModelSpec>>;
+
 const PROVIDER = "9router/kr";
 
 const TIER_MODELS: Record<Tier, ModelSpec> = {
@@ -47,8 +54,8 @@ const TIER_ROLES: Record<Tier, string> = {
   verifier: "verifier",
 };
 
-export function modelFor(tier: Tier): string {
-  const spec = TIER_MODELS[tier];
+export function modelFor(tier: Tier, overrides: ModelOverrides = {}): string {
+  const spec = overrides[tier] ?? TIER_MODELS[tier];
   return `${PROVIDER}/${spec.model}:${spec.thinking}`;
 }
 
@@ -59,15 +66,16 @@ export function sessionIdFor(spec: RunSpec): string {
 
 /**
  * Builds the exact `pi` argv for a step. The returned array is passed straight
- * to the process spawner (no shell), so values need no quoting here.
+ * to the process spawner (no shell), so values need no quoting here. Optional
+ * per-tier model overrides replace the default model for matching tiers.
  */
-export function buildPiArgs(spec: RunSpec): string[] {
+export function buildPiArgs(spec: RunSpec, overrides: ModelOverrides = {}): string[] {
   const args = [
     "-p",
     "--mode",
     "json",
     "--model",
-    modelFor(spec.tier),
+    modelFor(spec.tier, overrides),
     "--session-id",
     sessionIdFor(spec),
   ];
