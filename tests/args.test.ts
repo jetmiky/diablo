@@ -53,6 +53,35 @@ describe("parseArgs", () => {
     });
   });
 
+  test("parses --verifier-model override on run", () => {
+    const parsed = parseArgs(["run", "billing-02", "--verifier-model", "claude-opus-4.8"]);
+    expect(parsed).toEqual({
+      command: "run",
+      issue: "billing-02",
+      verifierModel: "claude-opus-4.8",
+    });
+  });
+
+  test("parses all three model overrides together", () => {
+    const parsed = parseArgs([
+      "run",
+      "billing-02",
+      "--planner-model",
+      "p",
+      "--worker-model",
+      "w",
+      "--verifier-model",
+      "v",
+    ]);
+    expect(parsed).toEqual({
+      command: "run",
+      issue: "billing-02",
+      plannerModel: "p",
+      workerModel: "w",
+      verifierModel: "v",
+    });
+  });
+
   test("run without model flags omits the override fields", () => {
     const parsed = parseArgs(["run", "billing-02"]);
     expect(parsed).toEqual({ command: "run", issue: "billing-02" });

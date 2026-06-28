@@ -5,7 +5,13 @@
  */
 
 export type ParsedArgs =
-  | { command: "run"; issue: string; plannerModel?: string; workerModel?: string }
+  | {
+      command: "run";
+      issue: string;
+      plannerModel?: string;
+      workerModel?: string;
+      verifierModel?: string;
+    }
   | { command: "version" }
   | { command: "help" }
   | { command: "error"; message: string };
@@ -30,16 +36,22 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const flags = rest.slice(1);
     let plannerModel: string | undefined;
     let workerModel: string | undefined;
+    let verifierModel: string | undefined;
 
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i]!;
-      if (flag === "--planner-model" || flag === "--worker-model") {
+      if (
+        flag === "--planner-model" ||
+        flag === "--worker-model" ||
+        flag === "--verifier-model"
+      ) {
         const value = flags[i + 1];
         if (value === undefined || value.startsWith("--")) {
           return { command: "error", message: `${flag} requires a model value` };
         }
         if (flag === "--planner-model") plannerModel = value;
-        else workerModel = value;
+        else if (flag === "--worker-model") workerModel = value;
+        else verifierModel = value;
         i++; // consume the value
         continue;
       }
@@ -49,6 +61,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     const result: ParsedArgs = { command: "run", issue };
     if (plannerModel !== undefined) result.plannerModel = plannerModel;
     if (workerModel !== undefined) result.workerModel = workerModel;
+    if (verifierModel !== undefined) result.verifierModel = verifierModel;
     return result;
   }
 

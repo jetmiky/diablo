@@ -27,6 +27,7 @@ Usage:
 Run options:
   --planner-model <m>    Override the planner model (e.g. claude-sonnet-4.5)
   --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
+  --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
 `;
 
 const SKILLS_DIR = `${process.env.HOME}/.agents/skills`;
@@ -79,7 +80,11 @@ function newRunId(): string {
  * worker → medium), so a cheap run can point a tier at a smaller model without
  * losing the tier's thinking budget.
  */
-function buildOverrides(plannerModel?: string, workerModel?: string): ModelOverrides {
+function buildOverrides(
+  plannerModel?: string,
+  workerModel?: string,
+  verifierModel?: string,
+): ModelOverrides {
   const overrides: ModelOverrides = {};
   if (plannerModel !== undefined) {
     overrides["planner-high"] = { model: plannerModel, thinking: "high" };
@@ -87,6 +92,9 @@ function buildOverrides(plannerModel?: string, workerModel?: string): ModelOverr
   }
   if (workerModel !== undefined) {
     overrides.worker = { model: workerModel, thinking: "medium" };
+  }
+  if (verifierModel !== undefined) {
+    overrides.verifier = { model: verifierModel, thinking: "medium" };
   }
   return overrides;
 }
@@ -124,7 +132,11 @@ async function main(argv: string[]): Promise<number> {
       return 2;
 
     case "run": {
-      const overrides = buildOverrides(parsed.plannerModel, parsed.workerModel);
+      const overrides = buildOverrides(
+        parsed.plannerModel,
+        parsed.workerModel,
+        parsed.verifierModel,
+      );
       const runId = newRunId();
       const deps = buildDeps(process.cwd(), overrides, runId);
       const config = buildRunConfig(process.cwd(), parsed.issue);
