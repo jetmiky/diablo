@@ -85,6 +85,20 @@ describe("GitCli", () => {
     );
   });
 
+  test("commit gives a clear 'no changes' error when the worker produced nothing", async () => {
+    // git prints "nothing to commit" on STDOUT and exits non-zero; the message
+    // must explain the worker made no changes, not just echo a cryptic code.
+    const runner = new FakeRunner([
+      { stdout: "", stderr: "", exitCode: 0 }, // git add -A
+      { stdout: "On branch x\nnothing to commit, working tree clean", stderr: "", exitCode: 1 },
+    ]);
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.commit("/proj/.worktrees/billing-02", "msg")).rejects.toThrow(
+      /no changes to commit/i,
+    );
+  });
+
   test("headSha returns the current HEAD SHA", async () => {
     const runner = new FakeRunner({ stdout: "b2c3d4e5f67890123456789012345678901234ab\n", stderr: "", exitCode: 0 });
     const git = new GitCli("/proj", runner);

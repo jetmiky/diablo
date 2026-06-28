@@ -47,6 +47,14 @@ export class GitCli implements GitPort {
       worktree,
     );
     if (commitOutcome.exitCode !== 0) {
+      // git prints "nothing to commit" on stdout, not stderr.
+      const combined = `${commitOutcome.stdout}\n${commitOutcome.stderr}`;
+      if (/nothing to commit/i.test(combined)) {
+        throw new Error(
+          `No changes to commit in ${worktree}: the step produced no file changes ` +
+            `but was expected to. Check the agent actually implemented the work.`,
+        );
+      }
       throw new Error(
         `git commit failed with code ${commitOutcome.exitCode}.\n${commitOutcome.stderr.trim()}`,
       );
