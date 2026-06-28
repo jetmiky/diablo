@@ -4,18 +4,19 @@
  * fake; the live binding (NodeProcessRunner) is used in production.
  */
 import type { GitPort } from "../ports/git.ts";
+import type { GitMergePort, MergeResult } from "../ports/git-merge.ts";
 import type { ProcessRunner } from "../ports/agent.ts";
 
-export class GitCli implements GitPort {
+export class GitCli implements GitPort, GitMergePort {
   constructor(
     private readonly repoRoot: string,
     private readonly runner: ProcessRunner,
   ) {}
 
-  async worktreeAdd(issue: string, baseBranch: string): Promise<string> {
+  async worktreeAdd(issue: string, baseBranch: string, branch?: string): Promise<string> {
     const path = `${this.repoRoot}/.worktrees/${issue}`;
-    const branchName = `diablo/${issue}`;
-    
+    const branchName = branch ?? `diablo/${issue}`;
+
     const outcome = await this.runner.run(
       "git",
       ["worktree", "add", "-b", branchName, path, baseBranch],
@@ -105,5 +106,45 @@ export class GitCli implements GitPort {
     }
 
     return outcome.stdout;
+  }
+
+  /**
+   * Merge `branch` into `targetBranch` in the PRIMARY working copy (repoRoot,
+   * not a worktree). Detect-and-halt: on conflict, collect the conflicting
+   * files and `git merge --abort` so the tree is left clean — conflicts are
+   * NEVER auto-resolved. Throws only on an unexpected git failure (e.g. the
+   * target branch cannot be checked out), not on an ordinary conflict.
+   */
+  async merge(targetBranch: string, branch: string): Promise<MergeResult> {
+    const checkout = await this.runner.run("git", ["checkout", targetBranch], this.repoRoot);
+    if (checkout.exitCode !== 0) {
+      throw new Error(
+        `git checkout ${targetBranch} failed with code ${checkout.exitCode}.\n${checkout.stderr.trim()}`,
+      );
+    }
+
+    const merge = await this.runner.run("git", ["merge", "--no-ff", branch], this.repoRoot);
+    if (merge.exitCode === 0) {
+      return { ok: true };
+    }
+
+    // Conflict (or other non-clean merge): gather the unmerged files, then
+    // abort so nothing is left half-merged. Never auto-resolve.
+    const conflicts = await this.conflictingFiles();
+    await this.runner.run("git", ["merge", "--abort"], this.repoRoot);
+    return { ok: false, conflicts };
+  }
+
+  /** The files with merge conflicts (unmerged, diff-filter=U). */
+  private async conflictingFiles(): Promise<string[]> {
+    const outcome = await this.runner.run(
+      "git",
+      ["diff", "--name-only", "--diff-filter=U"],
+      this.repoRoot,
+    );
+    return outcome.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 }

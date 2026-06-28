@@ -51,6 +51,19 @@ Model selection follows three layers, each overriding the one before:
 built-in defaults  ←  diablo.config.json  ←  CLI flag (--planner-model, ...)
 ```
 
+## Branch integration
+
+Each run does its work on `<branchPrefix><issue>` (default `diablo/<issue>`),
+cut from `targetBranch`. After a final PASS:
+
+- `autoMerge: false` (default) — the branch is left intact and diablo prints the
+  exact `git merge` command. A passing verdict is not the same as "the human
+  wants this in main."
+- `autoMerge: true` + a clean merge — the branch is merged into `targetBranch`
+  in the primary working copy.
+- A merge conflict — diablo aborts the merge cleanly, lists the conflicting
+  files, and prints the manual command. Conflicts are **never** auto-resolved.
+
 ## Develop
 
 ```bash

@@ -134,4 +134,77 @@ describe("GitCli", () => {
       /code 128.*bad revision/s
     );
   });
+
+  test("worktreeAdd uses the configured branch name when given", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.worktreeAdd("billing-02", "main", "feat/diablo-billing-02");
+
+    expect(runner.calls[0]!.args).toEqual([
+      "worktree",
+      "add",
+      "-b",
+      "feat/diablo-billing-02",
+      "/proj/.worktrees/billing-02",
+      "main",
+    ]);
+  });
+
+  test("worktreeAdd defaults to diablo/<issue> when no branch is given (back-compat)", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.worktreeAdd("billing-02", "main");
+
+    expect(runner.calls[0]!.args[3]).toBe("diablo/billing-02");
+  });
+});
+
+describe("GitCli merge", () => {
+  test("clean merge: checks out target, merges --no-ff, returns ok", async () => {
+    const runner = new FakeRunner([
+      { stdout: "", stderr: "", exitCode: 0 }, // git checkout main
+      { stdout: "Merge made by the 'ort' strategy.", stderr: "", exitCode: 0 }, // git merge
+    ]);
+    const git = new GitCli("/proj", runner);
+
+    const result = await git.merge("main", "diablo/billing-02");
+
+    expect(result.ok).toBe(true);
+    expect(runner.calls[0]!.args).toEqual(["checkout", "main"]);
+    expect(runner.calls[0]!.cwd).toBe("/proj"); // primary working copy, not a worktree
+    expect(runner.calls[1]!.args).toEqual(["merge", "--no-ff", "diablo/billing-02"]);
+    expect(runner.calls[1]!.cwd).toBe("/proj");
+  });
+
+  test("conflict: aborts the merge cleanly and returns the conflicting files", async () => {
+    const runner = new FakeRunner([
+      { stdout: "", stderr: "", exitCode: 0 }, // git checkout main
+      { stdout: "CONFLICT (content): Merge conflict in src/a.ts", stderr: "", exitCode: 1 }, // git merge fails
+      { stdout: "src/a.ts\nsrc/b.ts\n", stderr: "", exitCode: 0 }, // git diff --name-only --diff-filter=U
+      { stdout: "", stderr: "", exitCode: 0 }, // git merge --abort
+    ]);
+    const git = new GitCli("/proj", runner);
+
+    const result = await git.merge("main", "diablo/billing-02");
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.conflicts).toEqual(["src/a.ts", "src/b.ts"]);
+    }
+    // The merge must be aborted — nothing left half-merged, nothing auto-resolved.
+    const abort = runner.calls.find((c) => c.args.join(" ") === "merge --abort");
+    expect(abort).toBeDefined();
+    expect(abort!.cwd).toBe("/proj");
+  });
+
+  test("merge throws if the target branch cannot be checked out", async () => {
+    const runner = new FakeRunner([
+      { stdout: "", stderr: "error: pathspec 'main' did not match", exitCode: 1 },
+    ]);
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.merge("main", "diablo/billing-02")).rejects.toThrow(/checkout.*main/s);
+  });
 });

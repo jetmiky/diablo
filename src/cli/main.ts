@@ -14,7 +14,7 @@ import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
 import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
-import { runDiablo, type RunDiabloConfig, type RunDiabloDeps } from "../app/run-diablo.ts";
+import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResult } from "../app/run-diablo.ts";
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { resolveModels, type ConfigModels } from "../domain/config.ts";
@@ -113,13 +113,15 @@ function buildRunConfig(
   issue: string,
   skillsDir: string,
   retry: { limit: number },
+  integration: { targetBranch: string; branchPrefix: string; autoMerge: boolean },
 ): RunDiabloConfig {
   const worktree = `${repoRoot}/.worktrees/${issue}`;
   return {
     issue,
-    baseBranch: "main",
+    baseBranch: integration.targetBranch,
     worktree,
     retry,
+    integration,
     ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
@@ -176,7 +178,13 @@ async function main(argv: string[]): Promise<number> {
       const skillsDir = config.skillsDir ?? SKILLS_DIR;
       const runId = newRunId();
       const deps = buildDeps(repoRoot, overrides, runId);
-      const runConfig = buildRunConfig(repoRoot, parsed.issue, skillsDir, config.retry);
+      const runConfig = buildRunConfig(
+        repoRoot,
+        parsed.issue,
+        skillsDir,
+        config.retry,
+        config.integration,
+      );
       try {
         const result = await runDiablo(deps, runConfig);
         process.stdout.write(
@@ -184,6 +192,7 @@ async function main(argv: string[]): Promise<number> {
             (result.commit ? ` — final commit ${result.commit.slice(0, 10)}` : "") +
             `\n`,
         );
+        writeIntegrationNotice(result.integration);
         return 0;
       } catch (err) {
         if (err instanceof GateDeclinedError) {
@@ -234,6 +243,35 @@ async function bootstrapTooling(runner: NodeProcessRunner, repoRoot: string): Pr
     repoRoot,
   );
   await runner.run("npx", ["husky", "init"], repoRoot);
+}
+
+/**
+ * Prints what happened to the work branch after the run. autoMerge-off prints
+ * the exact manual merge command; a clean auto-merge confirms integration; a
+ * conflict lists the conflicting files and the manual command (never resolved).
+ */
+function writeIntegrationNotice(integration: RunDiabloResult["integration"]): void {
+  if (!integration) return;
+  switch (integration.status) {
+    case "manual":
+      process.stdout.write(
+        `\n📦 work is on ${integration.branch}. To integrate:\n   ${integration.command}\n`,
+      );
+      return;
+    case "merged":
+      process.stdout.write(
+        `\n📦 merged ${integration.branch} into ${integration.targetBranch}.\n`,
+      );
+      return;
+    case "conflict":
+      process.stdout.write(
+        `\n⚠️  merge of ${integration.branch} into ${integration.targetBranch} hit conflicts ` +
+          `(aborted cleanly, nothing auto-resolved):\n` +
+          integration.conflicts.map((f) => `   - ${f}`).join("\n") +
+          `\n\nResolve by hand:\n   ${integration.command}\n`,
+      );
+      return;
+  }
 }
 
 main(process.argv.slice(2))

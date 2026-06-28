@@ -107,3 +107,65 @@ describe("runDiablo", () => {
     expect(agent.tiers).toEqual(["worker", "verifier"]); // planner skipped
   });
 });
+
+describe("runDiablo integration", () => {
+  const intConfig = {
+    ...config,
+    integration: { targetBranch: "main", branchPrefix: "diablo/", autoMerge: false },
+  };
+
+  test("passes the prefixed branch name to worktreeAdd", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const git = new FakeGit();
+    const branches: Array<string | undefined> = [];
+    const trackingGit: GitPort = {
+      worktreeAdd: (issue, base, branch) => {
+        branches.push(branch);
+        return git.worktreeAdd(issue, base);
+      },
+      commit: () => git.commit(),
+      headSha: () => git.headSha(),
+      diffStat: () => git.diffStat(),
+    };
+    await runDiablo({ agent, git: trackingGit, fs }, { ...intConfig, integration: { targetBranch: "main", branchPrefix: "feat/diablo-", autoMerge: false } });
+    expect(branches).toEqual(["feat/diablo-billing-02"]);
+  });
+
+  test("autoMerge off: returns a manual integration result, never merges", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    let merged = false;
+    const merge = { merge: () => { merged = true; return Promise.resolve({ ok: true as const }); } };
+    const out = await runDiablo({ agent, git: new FakeGit(), fs, merge }, intConfig);
+
+    expect(out.integration?.status).toBe("manual");
+    expect(merged).toBe(false);
+  });
+
+  test("autoMerge on + clean: merges into the target branch", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const mergeCalls: Array<{ target: string; branch: string }> = [];
+    const merge = {
+      merge: (target: string, branch: string) => {
+        mergeCalls.push({ target, branch });
+        return Promise.resolve({ ok: true as const });
+      },
+    };
+    const out = await runDiablo(
+      { agent, git: new FakeGit(), fs, merge },
+      { ...intConfig, integration: { targetBranch: "main", branchPrefix: "diablo/", autoMerge: true } },
+    );
+
+    expect(out.integration?.status).toBe("merged");
+    expect(mergeCalls).toEqual([{ target: "main", branch: "diablo/billing-02" }]);
+  });
+
+  test("no integration config: no integration result (back-compat)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const out = await runDiablo(deps(agent, new FakeGit(), fs), config);
+    expect(out.integration).toBeUndefined();
+  });
+});
