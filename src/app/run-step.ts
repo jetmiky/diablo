@@ -18,6 +18,7 @@ import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 import type { RunSpec, Tier } from "../domain/run-spec.ts";
 import { parseVerdict } from "../domain/verdict.ts";
+import type { ProgressPort } from "../ports/progress.ts";
 
 /**
  * Thrown when a verifier step does not return a passing verdict — either it
@@ -73,6 +74,8 @@ export interface RunStepDeps {
   git: GitPort;
   /** Required only when a step requests an "approval" gate. */
   gate?: GatePort;
+  /** Optional progress sink; when present, the run loop emits structured events to it. */
+  progress?: ProgressPort;
 }
 
 export interface StepResult extends PiResult {

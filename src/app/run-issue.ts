@@ -7,11 +7,12 @@
  *
  * Sequential and fail-fast: if a stage throws (an errored step), the issue
  * stops and later stages do not run. Pure orchestration over run-stage, so it
- * is unit-tested against fakes. Progress-tracker writing (progress.md) is I/O
- * and layers on later as an injected port, not baked into this loop.
+ * is unit-tested against fakes. Progress events (stage lifecycle, done, halted)
+ * are emitted through the optional ProgressPort in deps.
  */
 import { runStage, type Stage, type StageResult, type RetryPolicy } from "./run-stage.ts";
 import type { RunStepDeps } from "./run-step.ts";
+import type { ProgressEvent } from "../ports/progress.ts";
 
 export interface Issue {
   issue: string;
@@ -32,13 +33,48 @@ export async function runIssue(
   const stages: StageResult[] = [];
   let commit: string | undefined;
 
-  for (const stage of issue.stages) {
-    const result = await runStage(deps, stage, retry);
-    stages.push(result);
-    if (result.commit !== undefined) {
-      commit = result.commit;
+  const emit = (event: ProgressEvent) => deps.progress?.emit(event) ?? Promise.resolve();
+
+  for (let i = 0; i < issue.stages.length; i++) {
+    const stage = issue.stages[i]!;
+    const title = stageTitle(stage);
+    await emit({
+      kind: "stage-started",
+      stage: stage.stage,
+      title,
+      index: i + 1,
+      total: issue.stages.length,
+    });
+
+    let result: StageResult;
+    try {
+      result = await runStage(deps, stage, retry);
+    } catch (err) {
+      await emit({ kind: "halted", reason: haltReason(stage, err) });
+      throw err;
     }
+
+    stages.push(result);
+    if (result.commit !== undefined) commit = result.commit;
+    await emit({ kind: "stage-done", stage: stage.stage, title });
   }
 
+  await emit({ kind: "done", commit });
   return { stages, commit };
+}
+
+/**
+ * A stage's human-facing title. Stages carry an id (stage-N); the worker step's
+ * commit message holds the readable title, so derive it when available, else
+ * fall back to the id.
+ */
+function stageTitle(stage: Stage): string {
+  const worker = stage.steps.find((s) => s.commitMessage);
+  const match = worker?.commitMessage?.match(/stage \d+ - (.+)$/i);
+  return match?.[1] ?? stage.stage;
+}
+
+function haltReason(stage: Stage, err: unknown): string {
+  const base = err instanceof Error ? err.message.split("\n")[0] : String(err);
+  return `${stage.stage}: ${base}`;
 }

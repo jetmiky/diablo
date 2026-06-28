@@ -16,6 +16,7 @@ import type { RetryPolicy } from "./run-stage.ts";
 import { integrate, type IntegrateResult } from "./integrate.ts";
 import { branchName } from "../domain/branch.ts";
 import type { GatePort } from "../ports/gate.ts";
+import type { ProgressPort } from "../ports/progress.ts";
 
 export interface IntegrationConfig {
   targetBranch: string;
@@ -38,6 +39,8 @@ export interface RunDiabloDeps {
   gate?: GatePort;
   /** Required only when config.integration requests a merge. */
   merge?: GitMergePort;
+  /** Optional progress sink; structured run events are emitted to it when present. */
+  progress?: ProgressPort;
 }
 
 export interface RunDiabloResult extends IssueResult {
@@ -60,7 +63,7 @@ export async function runDiablo(
   const issue = await loadIssue(deps, config);
 
   const result = await runIssue(
-    { agent: deps.agent, git: deps.git, gate: deps.gate },
+    { agent: deps.agent, git: deps.git, gate: deps.gate, progress: deps.progress },
     issue,
     config.retry ?? { limit: 0 },
   );

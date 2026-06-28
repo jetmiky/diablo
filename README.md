@@ -88,6 +88,25 @@ Refactor is human-initiated, never auto-detected — deciding "this is large eno
 to refactor" is a human judgment. A refactor plan can surface new issues, which
 flow back through `to-issues` → `diablo run`. Same engine, looped.
 
+## Progress
+
+A run emits structured progress events through a `ProgressPort` to three sinks:
+
+- **stdout** — a one-line status per event (always on).
+- **`progress.md`** — a LIVE tracker in the worktree's `.plans/`, updated every
+  event with per-stage status (TODO/IN_PROGRESS/DONE/HALTED), commit SHA,
+  verdict, retries, and a Pending Todos list. Each stage's **handoff note**
+  (the worker's carry-forward narrative: decisions, deferrals, gotchas) is
+  folded into the same artifact — one file, no drift.
+- **Telegram** — push notifications rendered as Telegram-HTML (the supported
+  `<b>/<i>/<code>/<pre>/<a>` subset, escaped for path/SHA/code-heavy content).
+  Enabled only when `DIABLO_TELEGRAM_BOT_TOKEN` and `DIABLO_TELEGRAM_CHAT_ID`
+  are set in the environment; no credentials are read from config or committed.
+
+Sinks are best-effort: a failing sink (e.g. Telegram down) never halts a run.
+Idle-vs-working is derived from the event stream (`waiting-for-approval` = idle).
+Two-way interactive approval over Telegram is out of scope (deferred).
+
 ## Develop
 
 ```bash

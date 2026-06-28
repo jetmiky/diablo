@@ -19,7 +19,13 @@ import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { resolveModels, type ConfigModels } from "../domain/config.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
+import { StdoutProgress } from "../adapters/stdout-progress.ts";
+import { ProgressMdAdapter } from "../adapters/progress-md.ts";
+import { TelegramProgress } from "../adapters/telegram-progress.ts";
+import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
+import { FanOutProgress } from "../adapters/fan-out-progress.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
+import type { ProgressPort } from "../ports/progress.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
 
 const VERSION = "0.1.0";
@@ -70,7 +76,12 @@ function resolveTicketPaths(location: string): string[] {
     .map((name) => `${location}/${name}`);
 }
 
-function buildDeps(repoRoot: string, overrides: ModelOverrides, runId: string): RunDiabloDeps {
+function buildDeps(
+  repoRoot: string,
+  overrides: ModelOverrides,
+  runId: string,
+  progress: RunDiabloDeps["progress"],
+): RunDiabloDeps {
   const runner = new NodeProcessRunner();
   const piBinary = `${process.env.HOME}/.bun/bin/pi`;
   return {
@@ -78,7 +89,27 @@ function buildDeps(repoRoot: string, overrides: ModelOverrides, runId: string): 
     git: new GitCli(repoRoot, runner),
     fs: new NodeFs(),
     gate: new StdinGate(),
+    progress,
   };
+}
+
+/**
+ * Assembles the progress sinks: stdout (always), a live progress.md tracker in
+ * the worktree (always), and a Telegram push sink IFF credentials are present
+ * in the environment (DIABLO_TELEGRAM_BOT_TOKEN + DIABLO_TELEGRAM_CHAT_ID). No
+ * credentials are read from config or committed; absent them, Telegram is just
+ * skipped. The fan-out swallows any sink failure so progress never halts a run.
+ */
+function buildProgress(progressPath: string, issue: string): FanOutProgress {
+  const sinks: ProgressPort[] = [new StdoutProgress(), new ProgressMdAdapter(new NodeFs(), progressPath, issue)];
+
+  const token = process.env.DIABLO_TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.DIABLO_TELEGRAM_CHAT_ID;
+  if (token && chatId) {
+    sinks.push(new TelegramProgress(new TelegramBotClient(token, chatId)));
+  }
+
+  return new FanOutProgress(sinks);
 }
 
 /**
@@ -244,7 +275,6 @@ async function executeRun(
   const overrides = buildOverrides(models);
   const skillsDir = config.skillsDir ?? SKILLS_DIR;
   const runId = newRunId();
-  const deps = buildDeps(repoRoot, overrides, runId);
   const runConfig = buildRunConfig(
     repoRoot,
     target,
@@ -253,6 +283,9 @@ async function executeRun(
     config.integration,
     flow,
   );
+  const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
+  const progress = buildProgress(progressPath, target);
+  const deps = buildDeps(repoRoot, overrides, runId, progress);
   try {
     const result = await runDiablo(deps, runConfig);
     process.stdout.write(
