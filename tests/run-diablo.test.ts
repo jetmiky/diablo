@@ -50,7 +50,8 @@ class FakeAgent implements AgentPort {
   run(spec: { tier: string }): Promise<PiResult> {
     this.tiers.push(spec.tier);
     if (spec.tier === "planner-high") this.onPlan?.();
-    return Promise.resolve({ text: "ok", stopReason: "stop", usage: { totalTokens: 1, cost: 0 } });
+    const text = spec.tier === "verifier" ? "VERDICT: PASS" : "ok";
+    return Promise.resolve({ text, stopReason: "stop", usage: { totalTokens: 1, cost: 0 } });
   }
 }
 

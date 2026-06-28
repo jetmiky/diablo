@@ -106,6 +106,23 @@ describe("planToIssue", () => {
     const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
     expect(verifier.instruction.toLowerCase()).toMatch(/verif|verdict|acceptance/);
   });
+
+  test("the verifier instruction requires running typecheck and the full test suite", () => {
+    // The verdict must be grounded in actually executing the gates, not just
+    // reading the diff — that is how a broken test file slips through.
+    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    const lower = verifier.instruction.toLowerCase();
+    expect(lower).toMatch(/typecheck/);
+    expect(lower).toMatch(/test/);
+  });
+
+  test("the verifier instruction mandates a final VERDICT: PASS or FAIL line", () => {
+    // run-step parses this line to give the verdict teeth; without it the
+    // verdict is read as 'none' and treated as a failure.
+    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    expect(verifier.instruction).toMatch(/VERDICT:\s*PASS/);
+    expect(verifier.instruction).toMatch(/VERDICT:\s*FAIL/);
+  });
 });
 
 describe("planToIssue verification stages", () => {

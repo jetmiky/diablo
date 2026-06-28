@@ -17,6 +17,27 @@ import type { GateMode, GatePort } from "../ports/gate.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 import type { RunSpec, Tier } from "../domain/run-spec.ts";
+import { parseVerdict } from "../domain/verdict.ts";
+
+/**
+ * Thrown when a verifier step does not return a passing verdict — either it
+ * reported VERDICT: FAIL, or it returned no verdict line at all (silence is
+ * treated as failure, never as success). Halts the pipeline fail-fast so a
+ * stage with a type error or failing test cannot be claimed as complete.
+ */
+export class VerificationFailedError extends Error {
+  constructor(
+    readonly issue: string,
+    readonly stage: string,
+    readonly verdictText: string,
+  ) {
+    super(
+      `Verification failed for ${issue}/${stage}: the verifier did not return ` +
+        `VERDICT: PASS.\n${verdictText}`,
+    );
+    this.name = "VerificationFailedError";
+  }
+}
 
 export interface Step {
   tier: Tier;
@@ -72,6 +93,12 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
     throw new Error(
       `Agent step ${step.tier} (${step.issue}/${step.stage}) ended in error: ${result.text}`,
     );
+  }
+
+  // A verifier's only output is its verdict; give it teeth. A FAIL — or no
+  // verdict line at all (silence is not success) — halts the pipeline fail-fast.
+  if (step.tier === "verifier" && parseVerdict(result.text) !== "pass") {
+    throw new VerificationFailedError(step.issue, step.stage, result.text);
   }
 
   if (step.commitMessage === undefined) {

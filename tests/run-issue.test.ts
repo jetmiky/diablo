@@ -72,8 +72,8 @@ function workerStage(name: string): Stage {
 describe("runIssue", () => {
   test("runs every stage in order", async () => {
     const agent = new SeqAgent([
-      result("impl-1"), result("ok-1"),
-      result("impl-2"), result("ok-2"),
+      result("impl-1"), result("VERDICT: PASS"),
+      result("impl-2"), result("VERDICT: PASS"),
     ]);
     const git = new SeqGit();
     const issue: Issue = {
@@ -90,8 +90,8 @@ describe("runIssue", () => {
 
   test("threads each stage's handoff commit forward; final commit is the last stage's", async () => {
     const agent = new SeqAgent([
-      result("impl-1"), result("ok-1"),
-      result("impl-2"), result("ok-2"),
+      result("impl-1"), result("VERDICT: PASS"),
+      result("impl-2"), result("VERDICT: PASS"),
     ]);
     const git = new SeqGit();
     const issue: Issue = {
@@ -108,7 +108,7 @@ describe("runIssue", () => {
 
   test("stops at the first failing stage and does not run later stages", async () => {
     const agent = new SeqAgent([
-      result("impl-1"), result("ok-1"),
+      result("impl-1"), result("VERDICT: PASS"),
       { ...result("boom"), stopReason: "error" }, // stage-2 worker errors
     ]);
     const git = new SeqGit();

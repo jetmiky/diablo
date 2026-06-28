@@ -61,7 +61,7 @@ const deps = (agent: AgentPort, git: GitPort): RunStepDeps => ({ agent, git });
 
 describe("runStage", () => {
   test("runs every step in declared order", async () => {
-    const agent = new SeqAgent([result("plan"), result("impl"), result("VERDICT: ok")]);
+    const agent = new SeqAgent([result("plan"), result("impl"), result("VERDICT: PASS")]);
     const git = new SeqGit();
     const stage: Stage = {
       issue: "billing-02",
@@ -77,11 +77,11 @@ describe("runStage", () => {
 
     expect(agent.tiers).toEqual(["planner-med", "worker", "verifier"]);
     expect(out.steps).toHaveLength(3);
-    expect(out.steps[2]!.text).toBe("VERDICT: ok");
+    expect(out.steps[2]!.text).toBe("VERDICT: PASS");
   });
 
   test("records the LAST committing step's SHA as the stage handoff commit", async () => {
-    const agent = new SeqAgent([result("plan"), result("impl"), result("VERDICT: ok")]);
+    const agent = new SeqAgent([result("plan"), result("impl"), result("VERDICT: PASS")]);
     const git = new SeqGit();
     const stage: Stage = {
       issue: "billing-02",
@@ -100,7 +100,7 @@ describe("runStage", () => {
   });
 
   test("leaves stage commit undefined when no step commits", async () => {
-    const agent = new SeqAgent([result("VERDICT: ok")]);
+    const agent = new SeqAgent([result("VERDICT: PASS")]);
     const git = new SeqGit();
     const stage: Stage = {
       issue: "billing-02",

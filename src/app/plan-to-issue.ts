@@ -60,8 +60,14 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     skills: config.skills.verifier,
     instruction:
       `Verify stage ${stage.number} ("${stage.title}"): check the committed work against the ` +
-      `acceptance criteria of tasks ${taskIds} in the plan. Report a verdict of ` +
-      `acceptable, or list what must change. Do not modify code.`,
+      `acceptance criteria of tasks ${taskIds} in the plan. ` +
+      `You MUST actually run the project's gates, not just read the diff: run the typecheck ` +
+      `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
+      `they output. A type error or a failing test — anywhere, including in test files — is a ` +
+      `FAIL. Do not modify code. ` +
+      `End your reply with a single line, exactly "VERDICT: PASS" if the typecheck is clean, the ` +
+      `full test suite passes, and the acceptance criteria are met, or "VERDICT: FAIL" otherwise ` +
+      `followed by a short list of what must change.`,
     // No commitMessage: a verifier only reads and returns a verdict.
   };
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { runStep, type RunStepDeps, type Step } from "../src/app/run-step.ts";
+import { runStep, VerificationFailedError, type RunStepDeps, type Step } from "../src/app/run-step.ts";
 import type { AgentPort } from "../src/ports/agent.ts";
 import type { GitPort } from "../src/ports/git.ts";
 import type { PiResult } from "../src/domain/pi-result.ts";
@@ -83,7 +83,7 @@ describe("runStep", () => {
   });
 
   test("does NOT commit when commitMessage is absent (e.g. a verifier step)", async () => {
-    const agent = new FakeAgent(fakeResult({ text: "VERDICT: acceptable" }));
+    const agent = new FakeAgent(fakeResult({ text: "VERDICT: PASS" }));
     const git = new FakeGit();
     const verifierStep: Step = {
       ...baseStep,
@@ -94,7 +94,7 @@ describe("runStep", () => {
 
     expect(git.commits).toHaveLength(0);
     expect(result.commit).toBeUndefined();
-    expect(result.text).toBe("VERDICT: acceptable");
+    expect(result.text).toBe("VERDICT: PASS");
   });
 
   test("commits AFTER the agent runs (never on a not-yet-run step)", async () => {
@@ -129,5 +129,48 @@ describe("runStep", () => {
     const git = new FakeGit();
     await expect(runStep(deps(agent, git), baseStep)).rejects.toThrow(/code 1/);
     expect(git.commits).toHaveLength(0);
+  });
+});
+
+describe("runStep verifier verdict", () => {
+  const verifierStep: Step = {
+    ...baseStep,
+    tier: "verifier",
+    commitMessage: undefined,
+  };
+
+  test("a verifier returning VERDICT: PASS completes normally", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "ran tests, all green.\nVERDICT: PASS" }));
+    const result = await runStep(deps(agent, new FakeGit()), verifierStep);
+    expect(result.text).toContain("VERDICT: PASS");
+    expect(result.commit).toBeUndefined();
+  });
+
+  test("a verifier returning VERDICT: FAIL throws VerificationFailedError", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "typecheck failed.\nVERDICT: FAIL" }));
+    await expect(runStep(deps(agent, new FakeGit()), verifierStep)).rejects.toThrow(
+      VerificationFailedError,
+    );
+  });
+
+  test("a verifier with NO verdict line is treated as a failure (silence is not success)", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "looks fine to me" }));
+    await expect(runStep(deps(agent, new FakeGit()), verifierStep)).rejects.toThrow(
+      VerificationFailedError,
+    );
+  });
+
+  test("the VerificationFailedError names the issue and stage for diagnosis", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "VERDICT: FAIL" }));
+    await expect(runStep(deps(agent, new FakeGit()), verifierStep)).rejects.toThrow(
+      /billing-02.*stage-1|stage-1.*billing-02/s,
+    );
+  });
+
+  test("the verdict check applies ONLY to verifier-tier steps, not workers", async () => {
+    // A worker's prose may contain no verdict line; that must never fail the step.
+    const agent = new FakeAgent(fakeResult({ text: "implemented the feature" }));
+    const result = await runStep(deps(agent, new FakeGit()), baseStep);
+    expect(result.commit).toBe("a".repeat(40));
   });
 });
