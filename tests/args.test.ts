@@ -130,4 +130,16 @@ describe("parseArgs", () => {
       workerModel: "claude-haiku-4.5",
     });
   });
+
+  test("parses the intake command with a feature slug", () => {
+    expect(parseArgs(["intake", "billing"])).toEqual({ command: "intake", feature: "billing" });
+  });
+
+  test("intake requires a feature slug", () => {
+    const parsed = parseArgs(["intake"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/feature|intake/i);
+    }
+  });
 });

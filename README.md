@@ -73,6 +73,21 @@ cut from `targetBranch`. After a final PASS:
 - A merge conflict — diablo aborts the merge cleanly, lists the conflicting
   files, and prints the manual command. Conflicts are **never** auto-resolved.
 
+## Intake
+
+`diablo intake <feature>` runs the requirement-gathering phase IN FRONT of
+`run`. Unlike `run` (autonomous, AFK), intake is interactive and Socratic — it
+cannot be AFK — so it is a separate command:
+
+1. **grill-with-docs** — an interactive session that gathers requirements,
+   adapting to the project: brownfield reads existing code + `CONTEXT.md`,
+   greenfield starts from an empty glossary.
+2. **to-prd** — authors a PRD from the gathered requirements.
+3. **human approval checkpoint** — you approve the PRD before it is decomposed;
+   declining stops cleanly with the PRD saved and no issues written.
+4. **to-issues** — decomposes the approved PRD into tracked issues under
+   `.scratch/<feature>/`, which `diablo run` then picks up.
+
 ## Run vs refactor
 
 `diablo run <issue>` and `diablo refactor <area>` share ONE engine — the same

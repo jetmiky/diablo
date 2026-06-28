@@ -13,6 +13,7 @@ export interface ModelFlagArgs {
 export type ParsedArgs =
   | ({ command: "run"; issue: string } & ModelFlagArgs)
   | ({ command: "refactor"; area: string } & ModelFlagArgs)
+  | { command: "intake"; feature: string }
   | { command: "version" }
   | { command: "help" }
   | { command: "init" }
@@ -34,6 +35,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       return { command: "error", message: "init takes no arguments: diablo init" };
     }
     return { command: "init" };
+  }
+
+  if (first === "intake") {
+    const feature = rest[0];
+    if (feature === undefined) {
+      return { command: "error", message: "intake requires a feature slug: diablo intake <feature>" };
+    }
+    return { command: "intake", feature };
   }
 
   if (first === "run" || first === "refactor") {

@@ -17,6 +17,7 @@ import { NodeFs } from "../adapters/node-fs.ts";
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResult } from "../app/run-diablo.ts";
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
+import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { resolveModels, type ConfigModels } from "../domain/config.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { StdoutProgress } from "../adapters/stdout-progress.ts";
@@ -34,6 +35,7 @@ const HELP = `diablo ${VERSION} — a skill-driven Pi conductor
 
 Usage:
   diablo init            Scaffold diablo.config.json and set up skills
+  diablo intake <feature> Gather requirements (grill → PRD → issues), interactive
   diablo run <issue>     Run an issue's stages through the agent pipeline
   diablo refactor <area> Refactor an area (same pipeline, refactor planner skill)
   diablo --version       Print the version
@@ -253,6 +255,10 @@ async function main(argv: string[]): Promise<number> {
       };
       return executeRun(parsed.area, flags, REFACTOR_FLOW, "refactor of");
     }
+
+    case "intake": {
+      return executeIntake(parsed.feature);
+    }
   }
 }
 
@@ -342,6 +348,71 @@ async function bootstrapTooling(runner: NodeProcessRunner, repoRoot: string): Pr
     repoRoot,
   );
   await runner.run("npx", ["husky", "init"], repoRoot);
+}
+
+/**
+ * Runs the INTAKE phase: interactive grill-with-docs → to-prd → human PRD
+ * approval → to-issues. Each step is an INTERACTIVE Pi session (inherited
+ * stdio) because intake is Socratic and cannot be AFK — kept separate from the
+ * autonomous `run`/`refactor` path. Greenfield vs brownfield is decided by the
+ * intake use-case from the presence of CONTEXT.md.
+ */
+async function executeIntake(feature: string): Promise<number> {
+  const repoRoot = process.cwd();
+  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
+  const skillsDir = config.skillsDir ?? SKILLS_DIR;
+  const scratchDir = `${repoRoot}/.scratch/${feature}`;
+  const runner = new NodeProcessRunner();
+  const piBinary = `${process.env.HOME}/.bun/bin/pi`;
+
+  const interactiveSkill = (skill: string, instruction: string) =>
+    runner.run(piBinary, [`@${skillFile(skillsDir, skill)}`, instruction], repoRoot).then(() => {});
+
+  const result = await intakeDiablo(
+    {
+      fs: new NodeFs(),
+      prompt: new StdinPrompt(),
+      grill: (ctx: GrillContext) => {
+        process.stdout.write(`\nGathering requirements for "${ctx.feature}" (${ctx.mode}, interactive)...\n`);
+        return interactiveSkill(
+          "grill-with-docs",
+          `Gather requirements for the feature "${ctx.feature}" following the grill-with-docs skill. ` +
+            `This is a ${ctx.mode} project: ${ctx.mode === "brownfield" ? "read the existing code and CONTEXT.md first" : "start from an empty glossary"}. ` +
+            `Write the gathered requirements under ${ctx.scratchDir}.`,
+        );
+      },
+      toPrd: (ctx: GrillContext) => {
+        process.stdout.write(`\nAuthoring the PRD (interactive)...\n`);
+        return interactiveSkill(
+          "to-prd",
+          `Turn the gathered requirements for "${ctx.feature}" into a PRD following the to-prd skill. ` +
+            `Write the PRD under ${ctx.scratchDir}.`,
+        );
+      },
+      toIssues: (ctx: GrillContext) => {
+        process.stdout.write(`\nDecomposing the PRD into issues (interactive)...\n`);
+        return interactiveSkill(
+          "to-issues",
+          `Decompose the approved PRD for "${ctx.feature}" into independently-grabbable issues following the ` +
+            `to-issues skill. Write each issue as local markdown under ${ctx.scratchDir} in diablo's ticket format.`,
+        );
+      },
+    },
+    { feature, repoRoot, scratchDir },
+  );
+
+  if (result.decomposed) {
+    process.stdout.write(
+      `\n✅ intake of ${feature} complete — issues in ${scratchDir}\n` +
+        `   Next: diablo run <issue>\n`,
+    );
+  } else {
+    process.stdout.write(
+      `\n⏸  intake of ${feature} stopped at the PRD (not approved). ` +
+        `The PRD is in ${scratchDir}; re-run \`diablo intake ${feature}\` to continue.\n`,
+    );
+  }
+  return 0;
 }
 
 /**
