@@ -13,6 +13,8 @@
  */
 import type { AgentPort } from "../ports/agent.ts";
 import type { GitPort } from "../ports/git.ts";
+import type { GateMode, GatePort } from "../ports/gate.ts";
+import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 import type { RunSpec, Tier } from "../domain/run-spec.ts";
 
@@ -30,11 +32,19 @@ export interface Step {
    * the step produces no commit (e.g. a verifier that only reads state).
    */
   commitMessage?: string;
+  /**
+   * The human checkpoint for this step, consulted AFTER the agent runs and
+   * commits. "approval" asks the GatePort to confirm; "none" (or omitted) runs
+   * fully AFK. Declining halts the pipeline with GateDeclinedError.
+   */
+  gate?: GateMode;
 }
 
 export interface RunStepDeps {
   agent: AgentPort;
   git: GitPort;
+  /** Required only when a step requests an "approval" gate. */
+  gate?: GatePort;
 }
 
 export interface StepResult extends PiResult {
@@ -65,9 +75,44 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
   }
 
   if (step.commitMessage === undefined) {
+    await maybeGate(deps, step, result, undefined);
     return result;
   }
 
   const commit = await deps.git.commit(step.worktree, step.commitMessage);
+  await maybeGate(deps, step, result, commit);
   return { ...result, commit };
+}
+
+/**
+ * Consults the human gate after the step's work is committed. A "none" or
+ * omitted gate runs fully AFK. An "approval" gate requires a GatePort; a
+ * decline halts the pipeline with GateDeclinedError.
+ */
+async function maybeGate(
+  deps: RunStepDeps,
+  step: Step,
+  result: PiResult,
+  commit: string | undefined,
+): Promise<void> {
+  if (step.gate !== "approval") return;
+
+  if (!deps.gate) {
+    throw new Error(
+      `Step ${step.tier} (${step.issue}/${step.stage}) requests an approval gate ` +
+        `but no GatePort was provided.`,
+    );
+  }
+
+  const proceed = await deps.gate.confirm({
+    tier: step.tier,
+    issue: step.issue,
+    stage: step.stage,
+    summary: result.text,
+    commit,
+  });
+
+  if (!proceed) {
+    throw new GateDeclinedError(step.issue, step.stage, step.tier);
+  }
 }
