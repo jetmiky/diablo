@@ -1,9 +1,20 @@
 /**
- * Maps a parsed Plan into an executable Issue: each plan stage becomes a Stage
- * whose steps run the implement-then-verify sequence. This is where diablo's
- * step topology for the implementation phase is defined — a worker step that
- * implements the stage and commits, followed by a verifier step that checks the
- * committed work against the stage's acceptance criteria without committing.
+ * Maps a parsed Plan into an executable Issue. This is where diablo's step
+ * topology is defined.
+ *
+ * An implementation stage runs three steps, handing off through the worktree:
+ *   1. design   (planner-med) — reads the ACTUAL code committed by prior stages
+ *                plus this stage's tasks, and writes a short design note naming
+ *                the functions/types/files (with signatures) this stage will
+ *                create or touch. Advisory: it does not commit.
+ *   2. worker   (worker tier) — implements the stage against the plan AND the
+ *                design note (injected as an input), committing the result.
+ *   3. verifier (verifier tier) — checks the committed work and returns a verdict.
+ *
+ * A final "Verification" stage (the master-plan skill's declarative last gate)
+ * produces no new artifacts; it maps to a SINGLE verification step on the
+ * PLANNER tier (a holistic, whole-feature judgment), not the cheap per-stage
+ * verifier tier — and it commits nothing.
  *
  * Pure (Plan -> Issue) so it is unit-tested directly. The frozen plan file is
  * injected as an @input to every step so each fresh agent reads the same spec.
@@ -19,6 +30,8 @@ export interface PlanToIssueConfig {
   /** Absolute path to the frozen plan file, injected as an input to every step. */
   planPath: string;
   skills: {
+    /** Skills for the per-stage design step (planner-med). */
+    designer: string[];
     worker: string[];
     verifier: string[];
   };
@@ -34,15 +47,26 @@ export function planToIssue(plan: Plan, config: PlanToIssueConfig): Issue {
 /**
  * A stage whose purpose is verification (the master-plan skill titles its final
  * gate "Verification") produces no new artifacts — the tests it checks were
- * already written in earlier TDD worker stages. Such a stage must NOT get a
- * committing worker, or the worker finds nothing to commit and the pipeline
- * crashes. The stage title is the declarative signal from the plan author.
+ * already written in earlier TDD worker stages. The stage title is the
+ * declarative signal from the plan author.
  */
 const VERIFICATION_TITLE_RE = /verif/i;
 
 function isVerificationStage(stage: PlanStage): boolean {
   return VERIFICATION_TITLE_RE.test(stage.title);
 }
+
+/** The per-stage design note the design step writes and the worker reads. */
+function designNotePath(config: PlanToIssueConfig, stageId: string): string {
+  return `${config.worktree}/.plans/${config.issue}-${stageId}-design.md`;
+}
+
+const VERDICT_INSTRUCTION =
+  `End your reply with a single line: exactly "VERDICT: PASS" if the typecheck is clean, the ` +
+  `full test suite passes, and the acceptance criteria are met. Otherwise end with ` +
+  `"VERDICT: FAIL [implementation]" if the code is at fault (a fix to the code can satisfy the ` +
+  `plan), or "VERDICT: FAIL [plan]" if the plan itself is wrong (it cannot be satisfied as ` +
+  `specified) — followed by a short list of what must change.`;
 
 function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
   const stageId = `stage-${stage.number}`;
@@ -52,6 +76,58 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     stage: stageId,
     worktree: config.worktree,
     inputs: [config.planPath],
+  };
+
+  // The FINAL verification stage: a single holistic verification on the PLANNER
+  // tier (tier-mismatch fix), enforcing a verdict but committing nothing.
+  if (isVerificationStage(stage)) {
+    const finalVerify: Step = {
+      ...base,
+      tier: "planner-med",
+      skills: config.skills.verifier,
+      verifies: true,
+      instruction:
+        `Perform the FINAL verification for stage ${stage.number} ("${stage.title}"): a holistic ` +
+        `judgment over the WHOLE feature, not a single stage's diff. Check the committed work ` +
+        `against the acceptance criteria of tasks ${taskIds} in the plan. ` +
+        `You MUST actually run the project's gates, not just read the diff: run the typecheck ` +
+        `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
+        `they output. A type error or a failing test — anywhere — is a FAIL. Do not modify code. ` +
+        VERDICT_INSTRUCTION,
+    };
+    return { issue: config.issue, stage: stageId, steps: [finalVerify] };
+  }
+
+  const notePath = designNotePath(config, stageId);
+
+  const design: Step = {
+    ...base,
+    tier: "planner-med",
+    skills: config.skills.designer,
+    instruction:
+      `Design stage ${stage.number} ("${stage.title}") of the plan (tasks ${taskIds}) BEFORE it ` +
+      `is implemented. First read the ACTUAL code committed by prior stages (use git and read ` +
+      `the relevant files in this worktree) so your design is grounded in real code, not guesses. ` +
+      `Then write a SHORT design note to ${notePath} naming, for THIS stage only: the functions ` +
+      `and types it will create or touch WITH their signatures, and the files it will add or ` +
+      `change. Keep it consistent with the TDD skill (the worker will write tests first against ` +
+      `these signatures). Do NOT implement the stage and do NOT modify source code — only write ` +
+      `the design note.`,
+    // No commitMessage: the design note is advisory; the worker commits the code.
+  };
+
+  const worker: Step = {
+    ...base,
+    tier: "worker",
+    skills: config.skills.worker,
+    inputs: [config.planPath, notePath],
+    instruction:
+      `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
+      `Follow the plan's tasks and acceptance criteria, the design note for this stage (the ` +
+      `functions/types/files and signatures to use), and the TDD skill's red-green-refactor ` +
+      `discipline. Work autonomously: do NOT ask for approval or confirmation — there is no human ` +
+      `to answer. Implement the code and tests directly, and run the tests yourself before finishing.`,
+    commitMessage: `feat(${config.issue}): stage ${stage.number} - ${stage.title}`,
   };
 
   const verifier: Step = {
@@ -65,31 +141,9 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
       `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
       `they output. A type error or a failing test — anywhere, including in test files — is a ` +
       `FAIL. Do not modify code. ` +
-      `End your reply with a single line: exactly "VERDICT: PASS" if the typecheck is clean, the ` +
-      `full test suite passes, and the acceptance criteria are met. Otherwise end with ` +
-      `"VERDICT: FAIL [implementation]" if the code is at fault (a fix to this stage's code can ` +
-      `satisfy the plan), or "VERDICT: FAIL [plan]" if the plan itself is wrong (the stage cannot ` +
-      `be satisfied as specified) — followed by a short list of what must change.`,
+      VERDICT_INSTRUCTION,
     // No commitMessage: a verifier only reads and returns a verdict.
   };
 
-  // A verification stage is verifier-only: there is nothing new to implement or
-  // commit, just a verdict on already-committed work.
-  if (isVerificationStage(stage)) {
-    return { issue: config.issue, stage: stageId, steps: [verifier] };
-  }
-
-  const worker: Step = {
-    ...base,
-    tier: "worker",
-    skills: config.skills.worker,
-    instruction:
-      `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
-      `Follow the plan's tasks and acceptance criteria, and the TDD skill's red-green-refactor discipline. ` +
-      `Work autonomously: do NOT ask for approval or confirmation — there is no human to answer. ` +
-      `Implement the code and tests directly, and run the tests yourself before finishing.`,
-    commitMessage: `feat(${config.issue}): stage ${stage.number} - ${stage.title}`,
-  };
-
-  return { issue: config.issue, stage: stageId, steps: [worker, verifier] };
+  return { issue: config.issue, stage: stageId, steps: [design, worker, verifier] };
 }

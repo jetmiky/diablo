@@ -24,6 +24,7 @@ const config: LoadIssueConfig = {
   planPath: "/proj/.worktrees/billing-02/.plans/billing-02-plan.md",
   skills: {
     planner: ["/skills/master-plan/SKILL.md"],
+    designer: ["/skills/tdd/SKILL.md"],
     worker: ["/skills/tdd/SKILL.md"],
     verifier: [],
   },
@@ -90,7 +91,7 @@ describe("loadIssue", () => {
     expect(agent.calls[0]!.tier).toBe("planner-high");
     expect(issue.issue).toBe("billing-02");
     expect(issue.stages).toHaveLength(1);
-    expect(issue.stages[0]!.steps.map((s) => s.tier)).toEqual(["worker", "verifier"]);
+    expect(issue.stages[0]!.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
   });
 
   test("fresh: the planner step injects the master-plan skill and the ticket(s)", async () => {

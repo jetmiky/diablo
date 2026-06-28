@@ -22,7 +22,7 @@ const config: RunDiabloConfig = {
   worktree: "/proj/.worktrees/billing-02",
   ticketPaths: ["/proj/.scratch/billing-02/01.md"],
   planPath: "/proj/.worktrees/billing-02/.plans/billing-02-plan.md",
-  skills: { planner: ["/s/master-plan/SKILL.md"], worker: ["/s/tdd/SKILL.md"], verifier: [] },
+  skills: { planner: ["/s/master-plan/SKILL.md"], designer: ["/s/tdd/SKILL.md"], worker: ["/s/tdd/SKILL.md"], verifier: [] },
 };
 
 class FakeFs implements FsPort {
@@ -85,7 +85,7 @@ describe("runDiablo", () => {
 
     expect(git.worktreesAdded).toEqual(["billing-02"]);
     expect(agent.tiers[0]).toBe("planner-high");
-    expect(agent.tiers.slice(1)).toEqual(["worker", "verifier"]); // the stage ran
+    expect(agent.tiers.slice(1)).toEqual(["planner-med", "worker", "verifier"]); // the stage ran
     expect(result.commit).toBe("c".repeat(40));
   });
 
@@ -104,7 +104,7 @@ describe("runDiablo", () => {
     const agent = new FakeAgent();
     await runDiablo(deps(agent, new FakeGit(), fs), config);
 
-    expect(agent.tiers).toEqual(["worker", "verifier"]); // planner skipped
+    expect(agent.tiers).toEqual(["planner-med", "worker", "verifier"]); // planner skipped
   });
 });
 

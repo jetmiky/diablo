@@ -126,6 +126,7 @@ function buildRunConfig(
     planPath: `${worktree}/.plans/${issue}-plan.md`,
     skills: {
       planner: [skillFile(skillsDir, "master-plan")],
+      designer: [skillFile(skillsDir, "tdd")],
       worker: [skillFile(skillsDir, "tdd")],
       verifier: [],
     },

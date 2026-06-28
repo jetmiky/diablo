@@ -39,7 +39,7 @@ const config: PlanToIssueConfig = {
   issue: "onboarding-cleanup",
   worktree: "/proj/.worktrees/onboarding-cleanup",
   planPath: "/proj/.plans/onboarding-cleanup-plan.md",
-  skills: { worker: ["/skills/tdd/SKILL.md"], verifier: [] },
+  skills: { designer: ["/skills/tdd/SKILL.md"], worker: ["/skills/tdd/SKILL.md"], verifier: [] },
 };
 
 describe("planToIssue", () => {
@@ -51,19 +51,51 @@ describe("planToIssue", () => {
     expect(issue.stages[1]!.stage).toBe("stage-2");
   });
 
-  test("each stage runs a worker step then a verifier step", () => {
+  test("each stage runs a design (planner-med), then worker, then verifier step", () => {
     const stage = planToIssue(plan, config).stages[0]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["worker", "verifier"]);
+    expect(stage.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
+  });
+
+  test("the design step does not commit (advisory note only) and the worker commits", () => {
+    const [design, worker, verifier] = planToIssue(plan, config).stages[0]!.steps;
+    expect(design!.commitMessage).toBeUndefined();
+    expect(worker!.commitMessage).toBeDefined();
+    expect(verifier!.commitMessage).toBeUndefined();
+  });
+
+  test("the design step writes a per-stage design note that the worker reads as input", () => {
+    const [design, worker] = planToIssue(plan, config).stages[0]!.steps;
+    const notePath = "/proj/.worktrees/onboarding-cleanup/.plans/onboarding-cleanup-stage-1-design.md";
+    // the design step is told to write the note; the worker injects it as input
+    expect(design!.instruction).toContain(notePath);
+    expect(worker!.inputs).toContain(notePath);
+  });
+
+  test("the design step is told to read prior stages' committed code", () => {
+    const design = planToIssue(plan, config).stages[1]!.steps[0]!;
+    expect(design.instruction.toLowerCase()).toMatch(/prior|previous|committed|git/);
+  });
+
+  test("the design step names functions/types/files with signatures (TDD-consistent)", () => {
+    const design = planToIssue(plan, config).stages[0]!.steps[0]!;
+    const lower = design.instruction.toLowerCase();
+    expect(lower).toMatch(/function|type|signature/);
+    expect(lower).toMatch(/file/);
+  });
+
+  test("the design step loads the configured designer skills", () => {
+    const design = planToIssue(plan, config).stages[0]!.steps[0]!;
+    expect(design.skills).toContain("/skills/tdd/SKILL.md");
   });
 
   test("the worker step commits; the verifier step does not", () => {
-    const [worker, verifier] = planToIssue(plan, config).stages[0]!.steps;
+    const [, worker, verifier] = planToIssue(plan, config).stages[0]!.steps;
     expect(worker!.commitMessage).toBeDefined();
     expect(verifier!.commitMessage).toBeUndefined();
   });
 
   test("worker commit message is a conventional commit referencing the stage", () => {
-    const worker = planToIssue(plan, config).stages[1]!.steps[0]!;
+    const worker = planToIssue(plan, config).stages[1]!.steps.find((s) => s.tier === "worker")!;
     expect(worker.commitMessage).toMatch(/^feat\(onboarding-cleanup\): stage 2/i);
   });
 
@@ -84,18 +116,18 @@ describe("planToIssue", () => {
   });
 
   test("the worker step loads the configured worker skills", () => {
-    const worker = planToIssue(plan, config).stages[0]!.steps[0]!;
+    const worker = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "worker")!;
     expect(worker.skills).toContain("/skills/tdd/SKILL.md");
   });
 
   test("the worker instruction names the stage and its task ids", () => {
-    const worker = planToIssue(plan, config).stages[0]!.steps[0]!;
+    const worker = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "worker")!;
     expect(worker.instruction).toContain("stage 1");
     expect(worker.instruction).toContain("T-001");
   });
 
   test("the worker instruction tells it to execute autonomously without asking for approval", () => {
-    const worker = planToIssue(plan, config).stages[0]!.steps[0]!;
+    const worker = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "worker")!;
     // The TDD skill has interactive 'get user approval' checkpoints; a headless
     // worker must override them and implement directly, or it stalls waiting for
     // input that never comes. The human checkpoint is diablo's gate after commit.
@@ -103,14 +135,14 @@ describe("planToIssue", () => {
   });
 
   test("the verifier instruction asks for a verdict against acceptance criteria", () => {
-    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier")!;
     expect(verifier.instruction.toLowerCase()).toMatch(/verif|verdict|acceptance/);
   });
 
   test("the verifier instruction requires running typecheck and the full test suite", () => {
     // The verdict must be grounded in actually executing the gates, not just
     // reading the diff — that is how a broken test file slips through.
-    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier")!;
     const lower = verifier.instruction.toLowerCase();
     expect(lower).toMatch(/typecheck/);
     expect(lower).toMatch(/test/);
@@ -119,7 +151,7 @@ describe("planToIssue", () => {
   test("the verifier instruction mandates a final VERDICT: PASS or FAIL line", () => {
     // run-step parses this line to give the verdict teeth; without it the
     // verdict is read as 'none' and treated as a failure.
-    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier")!;
     expect(verifier.instruction).toMatch(/VERDICT:\s*PASS/);
     expect(verifier.instruction).toMatch(/VERDICT:\s*FAIL/);
   });
@@ -127,9 +159,14 @@ describe("planToIssue", () => {
   test("the verifier instruction asks for the FAIL category (implementation vs plan)", () => {
     // The category drives retry routing: [implementation] retries the worker,
     // [plan] halts to a human.
-    const verifier = planToIssue(plan, config).stages[0]!.steps[1]!;
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier")!;
     expect(verifier.instruction).toMatch(/\[implementation\]/);
     expect(verifier.instruction).toMatch(/\[plan\]/);
+  });
+
+  test("the per-stage verifier runs on the verifier tier (cheap, frequent)", () => {
+    const verifier = planToIssue(plan, config).stages[0]!.steps.find((s) => s.tier === "verifier");
+    expect(verifier).toBeDefined();
   });
 });
 
@@ -172,9 +209,24 @@ describe("planToIssue verification stages", () => {
     ],
   };
 
-  test("a verification stage runs a single verifier step, no worker", () => {
+  test("a verification stage runs a single verification step, no worker", () => {
     const stage = planToIssue(verificationPlan, config).stages[1]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["verifier"]);
+    expect(stage.steps).toHaveLength(1);
+    expect(stage.steps[0]!.commitMessage).toBeUndefined();
+  });
+
+  test("the FINAL verification step runs on the PLANNER tier, not the per-stage verifier tier", () => {
+    // Tier-mismatch fix: the final, whole-feature verification is a holistic
+    // judgment and escalates to the planner (opus) tier; mid-pipeline verifiers
+    // stay cheap on the verifier tier.
+    const stage = planToIssue(verificationPlan, config).stages[1]!;
+    expect(stage.steps[0]!.tier).toBe("planner-med");
+  });
+
+  test("the final verification step still enforces a verdict (verifies=true)", () => {
+    const stage = planToIssue(verificationPlan, config).stages[1]!;
+    expect(stage.steps[0]!.verifies).toBe(true);
+    expect(stage.steps[0]!.instruction).toMatch(/VERDICT:\s*PASS/);
   });
 
   test("a verification stage's step never commits", () => {
@@ -188,9 +240,9 @@ describe("planToIssue verification stages", () => {
     expect(verifier.instruction).toContain("T-002");
   });
 
-  test("non-verification stages are unaffected (still worker then verifier)", () => {
+  test("non-verification stages are unaffected (design, worker, then verifier)", () => {
     const stage = planToIssue(verificationPlan, config).stages[0]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["worker", "verifier"]);
+    expect(stage.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
   });
 
   test("matches verification stages case-insensitively by title", () => {
@@ -198,6 +250,7 @@ describe("planToIssue verification stages", () => {
       stages: [{ ...verificationPlan.stages[1]!, title: "final verification & sign-off" }],
     };
     const stage = planToIssue(lower, config).stages[0]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["verifier"]);
+    expect(stage.steps).toHaveLength(1);
+    expect(stage.steps[0]!.tier).toBe("planner-med");
   });
 });

@@ -27,6 +27,7 @@ export interface LoadIssueConfig {
   planPath: string;
   skills: {
     planner: string[];
+    designer: string[];
     worker: string[];
     verifier: string[];
   };
@@ -56,7 +57,11 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
     issue: config.issue,
     worktree: config.worktree,
     planPath: config.planPath,
-    skills: { worker: config.skills.worker, verifier: config.skills.verifier },
+    skills: {
+      designer: config.skills.designer,
+      worker: config.skills.worker,
+      verifier: config.skills.verifier,
+    },
   });
 }
 

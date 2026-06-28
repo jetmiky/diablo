@@ -26,9 +26,18 @@ Early development. Building the core step-execution primitive first (sequential,
 | Tier | Model | Thinking | Used for |
 |------|-------|----------|----------|
 | planner-high | `kr/claude-opus-4.8` | high | grilling, master plan |
-| planner-med | `kr/claude-opus-4.8` | medium | PRD, stage plan, final verify |
+| planner-med | `kr/claude-opus-4.8` | medium | per-stage design (grounded in committed code), final verification |
 | worker | `kr/claude-sonnet-4.5` | medium | implementation |
 | verifier | `kr/claude-sonnet-4.5` | medium | per-stage verification |
+
+Each implementation stage runs **design → worker → verifier**: a `planner-med`
+design step reads the code prior stages actually committed and writes a short
+design note (functions/types/files with signatures) that the worker implements
+against. The frozen plan stays behavior-level; the per-stage design grounds the
+interface in real code rather than guessing at plan time. The final
+`Verification` stage escalates to the `planner-med` tier (a holistic,
+whole-feature judgment), while mid-pipeline verifiers stay cheap on the verifier
+tier.
 
 ## Configure
 

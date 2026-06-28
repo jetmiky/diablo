@@ -59,6 +59,13 @@ export interface Step {
    * fully AFK. Declining halts the pipeline with GateDeclinedError.
    */
   gate?: GateMode;
+  /**
+   * When true, the step's output MUST end with a passing VERDICT line or the
+   * pipeline halts (silence = failure). Defaults to true for verifier-tier
+   * steps; set explicitly so a non-verifier step (e.g. a planner-tier FINAL
+   * verification) can also enforce a verdict without being on the verifier tier.
+   */
+  verifies?: boolean;
 }
 
 export interface RunStepDeps {
@@ -95,9 +102,12 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
     );
   }
 
-  // A verifier's only output is its verdict; give it teeth. A FAIL — or no
-  // verdict line at all (silence is not success) — halts the pipeline fail-fast.
-  if (step.tier === "verifier" && parseVerdict(result.text) !== "pass") {
+  // A step that verifies (any verifier-tier step, or one explicitly marked
+  // verifies:true such as a planner-tier final verification) must end with a
+  // passing VERDICT line. A FAIL — or no verdict line at all (silence is not
+  // success) — halts the pipeline fail-fast.
+  const enforcesVerdict = step.verifies ?? step.tier === "verifier";
+  if (enforcesVerdict && parseVerdict(result.text) !== "pass") {
     throw new VerificationFailedError(step.issue, step.stage, result.text);
   }
 
