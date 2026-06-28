@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# diablo runtime state (machine-managed, never hand-edited)
+.diablo/
+.worktrees/

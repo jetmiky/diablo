@@ -1,0 +1,45 @@
+{
+  "name": "@jetmiky/diablo",
+  "version": "0.1.0",
+  "description": "A central conductor that runs your skills through the Pi coding agent in isolated worktrees, stopping at human gates and handing work off as git commits.",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "diablo": "dist/cli/main.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "diablo": "bun run ./src/cli/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun test && tsc --noEmit",
+    "build": "bun build src/cli/main.ts --target node --format esm --outdir dist && tsc --emitDeclarationOnly",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "diablo",
+    "orchestrator",
+    "pi",
+    "coding-agent",
+    "worktree",
+    "cli"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@types/bun": "^1.1.0",
+    "husky": "^9.0.0",
+    "typescript": "^5.5.0"
+  }
+}
