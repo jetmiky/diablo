@@ -122,4 +122,56 @@ Some prose.
     expect(plan.stages).toHaveLength(1);
     expect(plan.stages[0]!.title).toBe("Real");
   });
+
+  test("accepts a colon separator between stage number and title", () => {
+    // Planner models vary their punctuation: some write '## Stage 1 - Title',
+    // others '## Stage 1: Title'. The parser must tolerate both, or a plan from
+    // a different model parses to zero stages and the run dies on load.
+    const colon = `## Stage 1: Project Setup
+
+[T-001] - Scaffold
+- Objective: set up
+- Target Files: package.json
+- Dependency: None
+- Acceptance Criterias:
+  - it builds
+`;
+    const plan = parsePlan(colon);
+    expect(plan.stages).toHaveLength(1);
+    expect(plan.stages[0]!.number).toBe(1);
+    expect(plan.stages[0]!.title).toBe("Project Setup");
+  });
+
+  test("accepts an en-dash separator between stage number and title", () => {
+    const endash = `## Stage 2 – Core Implementation
+
+[T-002] - Build
+- Objective: build it
+- Target Files: src/x.ts
+- Dependency: None
+- Acceptance Criterias:
+  - works
+`;
+    const plan = parsePlan(endash);
+    expect(plan.stages[0]!.title).toBe("Core Implementation");
+  });
+
+  test("does not treat a non-stage heading with a colon as a stage", () => {
+    const withIntro = `## Summary: what we will do
+
+Prose.
+
+## Stage 1: Real Work
+
+[T-001] - Do a thing
+- Objective: do it
+- Target Files: src/a.ts
+- Dependency: None
+- Acceptance Criterias:
+  - it works
+`;
+    const plan = parsePlan(withIntro);
+    expect(plan.stages).toHaveLength(1);
+    expect(plan.stages[0]!.title).toBe("Real Work");
+  });
 });
