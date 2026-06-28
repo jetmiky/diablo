@@ -29,6 +29,7 @@ const HELP = `diablo ${VERSION} — a skill-driven Pi conductor
 Usage:
   diablo init            Scaffold diablo.config.json and set up skills
   diablo run <issue>     Run an issue's stages through the agent pipeline
+  diablo refactor <area> Refactor an area (same pipeline, refactor planner skill)
   diablo --version       Print the version
   diablo --help          Show this help
 
@@ -108,24 +109,61 @@ function buildOverrides(models: ConfigModels): ModelOverrides {
   };
 }
 
+/** Which planner flow a run uses — implementation (master-plan) or refactor. */
+interface PlannerFlow {
+  /** The vendored skill name injected into the planner step. */
+  skill: string;
+  /** The prose instruction handed to the planner. */
+  instruction: (planPath: string) => string;
+  /** Where the planner's input ticket(s) come from, relative to the repo. */
+  ticketPaths: (repoRoot: string, target: string) => string[];
+  /** The plan filename stem under the worktree's .plans dir. */
+  planStem: string;
+}
+
+const MASTER_PLAN_FLOW: PlannerFlow = {
+  skill: "master-plan",
+  instruction: (planPath) =>
+    `Create the frozen master plan for this issue following the master-plan skill. ` +
+    `Break the ticket(s) into sequenced stages and T-00X tasks, and write the plan to ${planPath}.`,
+  ticketPaths: (repoRoot, issue) => resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
+  planStem: "plan",
+};
+
+const REFACTOR_FLOW: PlannerFlow = {
+  skill: "improve-codebase-architecture",
+  instruction: (planPath) =>
+    `Create a frozen refactor plan for the target area following the ` +
+    `improve-codebase-architecture skill. Identify deepening opportunities, then break the ` +
+    `refactor into sequenced stages and T-00X tasks (each a safe, test-backed slice), and write ` +
+    `the plan to ${planPath}. End with a final "Verification" stage.`,
+  // A refactor's "ticket" is the area description in .scratch/<area>/ if present;
+  // resolveTicketPaths falls back to the path itself so a missing dir surfaces clearly.
+  ticketPaths: (repoRoot, area) => resolveTicketPaths(`${repoRoot}/.scratch/${area}`),
+  planStem: "refactor-plan",
+};
+
 function buildRunConfig(
   repoRoot: string,
-  issue: string,
+  target: string,
   skillsDir: string,
   retry: { limit: number },
   integration: { targetBranch: string; branchPrefix: string; autoMerge: boolean },
+  flow: PlannerFlow,
 ): RunDiabloConfig {
-  const worktree = `${repoRoot}/.worktrees/${issue}`;
+  const worktree = `${repoRoot}/.worktrees/${target}`;
+  const planPath = `${worktree}/.plans/${target}-${flow.planStem}.md`;
   return {
-    issue,
+    issue: target,
     baseBranch: integration.targetBranch,
     worktree,
     retry,
     integration,
-    ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
-    planPath: `${worktree}/.plans/${issue}-plan.md`,
+    ticketPaths: flow.ticketPaths(repoRoot, target),
+    planPath,
+    plannerInstruction: flow.instruction(planPath),
     skills: {
-      planner: [skillFile(skillsDir, "master-plan")],
+      planner: [skillFile(skillsDir, flow.skill)],
       designer: [skillFile(skillsDir, "tdd")],
       worker: [skillFile(skillsDir, "tdd")],
       verifier: [],
@@ -168,41 +206,68 @@ async function main(argv: string[]): Promise<number> {
     }
 
     case "run": {
-      const repoRoot = process.cwd();
-      const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
-      const models = resolveModels(config, {
+      const flags = {
         plannerModel: parsed.plannerModel,
         workerModel: parsed.workerModel,
         verifierModel: parsed.verifierModel,
-      });
-      const overrides = buildOverrides(models);
-      const skillsDir = config.skillsDir ?? SKILLS_DIR;
-      const runId = newRunId();
-      const deps = buildDeps(repoRoot, overrides, runId);
-      const runConfig = buildRunConfig(
-        repoRoot,
-        parsed.issue,
-        skillsDir,
-        config.retry,
-        config.integration,
-      );
-      try {
-        const result = await runDiablo(deps, runConfig);
-        process.stdout.write(
-          `\n✅ issue ${parsed.issue} complete` +
-            (result.commit ? ` — final commit ${result.commit.slice(0, 10)}` : "") +
-            `\n`,
-        );
-        writeIntegrationNotice(result.integration);
-        return 0;
-      } catch (err) {
-        if (err instanceof GateDeclinedError) {
-          process.stdout.write(`\n⏸  ${err.message}\n`);
-          return 0; // a clean human halt, not a failure
-        }
-        throw err;
-      }
+      };
+      return executeRun(parsed.issue, flags, MASTER_PLAN_FLOW, "issue");
     }
+
+    case "refactor": {
+      const flags = {
+        plannerModel: parsed.plannerModel,
+        workerModel: parsed.workerModel,
+        verifierModel: parsed.verifierModel,
+      };
+      return executeRun(parsed.area, flags, REFACTOR_FLOW, "refactor of");
+    }
+  }
+}
+
+/**
+ * Shared run executor for `run` and `refactor`. The two differ ONLY in the
+ * planner flow injected (master-plan vs improve-codebase-architecture) and the
+ * noun used in output — everything downstream (design, worker, verifier, final
+ * verify, integration) is identical. This is issue 08's core: refactor is just
+ * `run` with the planner skill swapped.
+ */
+async function executeRun(
+  target: string,
+  flags: { plannerModel?: string; workerModel?: string; verifierModel?: string },
+  flow: PlannerFlow,
+  noun: string,
+): Promise<number> {
+  const repoRoot = process.cwd();
+  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
+  const models = resolveModels(config, flags);
+  const overrides = buildOverrides(models);
+  const skillsDir = config.skillsDir ?? SKILLS_DIR;
+  const runId = newRunId();
+  const deps = buildDeps(repoRoot, overrides, runId);
+  const runConfig = buildRunConfig(
+    repoRoot,
+    target,
+    skillsDir,
+    config.retry,
+    config.integration,
+    flow,
+  );
+  try {
+    const result = await runDiablo(deps, runConfig);
+    process.stdout.write(
+      `\n✅ ${noun} ${target} complete` +
+        (result.commit ? ` — final commit ${result.commit.slice(0, 10)}` : "") +
+        `\n`,
+    );
+    writeIntegrationNotice(result.integration);
+    return 0;
+  } catch (err) {
+    if (err instanceof GateDeclinedError) {
+      process.stdout.write(`\n⏸  ${err.message}\n`);
+      return 0; // a clean human halt, not a failure
+    }
+    throw err;
   }
 }
 

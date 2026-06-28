@@ -126,4 +126,24 @@ describe("loadIssue", () => {
     const agent = new FakeAgent(); // does NOT write the plan
     await expect(loadIssue(deps(agent, fs), config)).rejects.toThrow(/plan.*not.*(written|found|exist)/i);
   });
+
+  test("the planner instruction is a run parameter (refactor swaps it)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const refactorConfig = {
+      ...config,
+      plannerInstruction: "Produce a refactor plan following improve-codebase-architecture.",
+    };
+    await loadIssue(deps(agent, fs), refactorConfig);
+
+    expect(agent.calls[0]!.instruction).toContain("improve-codebase-architecture");
+  });
+
+  test("defaults the planner instruction to the master-plan flow when not given", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    await loadIssue(deps(agent, fs), config);
+
+    expect(agent.calls[0]!.instruction.toLowerCase()).toMatch(/master plan|master-plan/);
+  });
 });

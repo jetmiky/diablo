@@ -73,6 +73,21 @@ cut from `targetBranch`. After a final PASS:
 - A merge conflict — diablo aborts the merge cleanly, lists the conflicting
   files, and prints the manual command. Conflicts are **never** auto-resolved.
 
+## Run vs refactor
+
+`diablo run <issue>` and `diablo refactor <area>` share ONE engine — the same
+design → worker → verifier → final-verify pipeline, integration, and gates. They
+differ only in the planner skill injected:
+
+| Command | Planner skill | Produces |
+|---------|---------------|----------|
+| `diablo run <issue>` | `master-plan` | an implementation plan from a ticket |
+| `diablo refactor <area>` | `improve-codebase-architecture` | a refactor plan for an area |
+
+Refactor is human-initiated, never auto-detected — deciding "this is large enough
+to refactor" is a human judgment. A refactor plan can surface new issues, which
+flow back through `to-issues` → `diablo run`. Same engine, looped.
+
 ## Develop
 
 ```bash

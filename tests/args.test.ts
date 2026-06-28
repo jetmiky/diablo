@@ -106,4 +106,28 @@ describe("parseArgs", () => {
       expect(parsed.message).toMatch(/init/i);
     }
   });
+
+  test("parses the refactor command with an area ref", () => {
+    expect(parseArgs(["refactor", "auth-layer"])).toEqual({
+      command: "refactor",
+      area: "auth-layer",
+    });
+  });
+
+  test("refactor requires an area ref", () => {
+    const parsed = parseArgs(["refactor"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/area/i);
+    }
+  });
+
+  test("refactor accepts the same model override flags as run", () => {
+    const parsed = parseArgs(["refactor", "auth-layer", "--worker-model", "claude-haiku-4.5"]);
+    expect(parsed).toEqual({
+      command: "refactor",
+      area: "auth-layer",
+      workerModel: "claude-haiku-4.5",
+    });
+  });
 });

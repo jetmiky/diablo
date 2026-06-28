@@ -31,6 +31,13 @@ export interface LoadIssueConfig {
     worker: string[];
     verifier: string[];
   };
+  /**
+   * The instruction handed to the planner-high step. Defaults to the master-plan
+   * flow; `diablo refactor` swaps it for an improve-codebase-architecture flow.
+   * The planner SKILL itself is set via skills.planner — this is the prose that
+   * tells the planner what to produce and where to write it.
+   */
+  plannerInstruction?: string;
 }
 
 export interface LoadIssueDeps {
@@ -66,16 +73,19 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
 }
 
 async function generatePlan(deps: LoadIssueDeps, config: LoadIssueConfig): Promise<void> {
+  const instruction =
+    config.plannerInstruction ??
+    `Create the frozen master plan for this issue following the master-plan skill. ` +
+      `Break the ticket(s) into sequenced stages and T-00X tasks, and write the plan to ` +
+      `${config.planPath}.`;
+
   const spec: RunSpec = {
     tier: "planner-high",
     issue: config.issue,
     stage: "plan",
     skills: config.skills.planner,
     inputs: config.ticketPaths,
-    instruction:
-      `Create the frozen master plan for this issue following the master-plan skill. ` +
-      `Break the ticket(s) into sequenced stages and T-00X tasks, and write the plan to ` +
-      `${config.planPath}.`,
+    instruction,
     worktree: config.worktree,
   };
   await deps.agent.run(spec);
