@@ -15,16 +15,18 @@ export class PiAgent implements AgentPort {
     private readonly piBinary: string,
     private readonly runner: ProcessRunner,
     private readonly overrides: ModelOverrides = {},
+    private readonly runId?: string,
   ) {}
 
   async run(spec: RunSpec): Promise<PiResult> {
-    const args = buildPiArgs(spec, this.overrides);
-    const outcome = await this.runner.run(this.piBinary, args, spec.worktree);
+    const stamped = this.runId ? { ...spec, runId: this.runId } : spec;
+    const args = buildPiArgs(stamped, this.overrides);
+    const outcome = await this.runner.run(this.piBinary, args, stamped.worktree);
 
     if (outcome.exitCode !== 0) {
       throw new Error(
-        `Pi exited with code ${outcome.exitCode} for ${spec.tier} step ` +
-          `(${spec.issue}/${spec.stage}).\n${outcome.stderr.trim()}`,
+        `Pi exited with code ${outcome.exitCode} for ${stamped.tier} step ` +
+          `(${stamped.issue}/${stamped.stage}).\n${outcome.stderr.trim()}`,
       );
     }
 

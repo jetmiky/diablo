@@ -23,6 +23,14 @@ export interface RunSpec {
   inputs: string[];
   instruction: string;
   worktree: string;
+  /**
+   * A per-RUN identifier. Pi resumes an existing --session-id (creating it only
+   * if missing), so a session-id identical across runs makes a new run resume
+   * the previous transcript — the agent reads its own "already done" history and
+   * does nothing. Embedding a runId keeps a session deterministic and shared
+   * across one run's steps (still inspectable) but isolated from other runs.
+   */
+  runId?: string;
 }
 
 interface ModelSpec {
@@ -61,7 +69,8 @@ export function modelFor(tier: Tier, overrides: ModelOverrides = {}): string {
 
 export function sessionIdFor(spec: RunSpec): string {
   const role = TIER_ROLES[spec.tier];
-  return `diablo-${spec.issue}-${spec.stage}-${role}`;
+  const run = spec.runId ? `${spec.runId}-` : "";
+  return `diablo-${spec.issue}-${run}${spec.stage}-${role}`;
 }
 
 /**

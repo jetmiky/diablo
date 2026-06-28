@@ -84,4 +84,15 @@ describe("PiAgent", () => {
     const args = runner.calls[0]!.args;
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-haiku-4.5:medium");
   });
+
+  test("stamps the run's runId into every step's session-id (cross-run isolation)", async () => {
+    const runner = new FakeRunner({ stdout: agentEndLine, stderr: "", exitCode: 0 });
+    const agent = new PiAgent("pi", runner, {}, "run-abc");
+    await agent.run(spec);
+
+    const args = runner.calls[0]!.args;
+    expect(args[args.indexOf("--session-id") + 1]).toBe(
+      "diablo-billing-02-run-abc-stage-1-worker",
+    );
+  });
 });

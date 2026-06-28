@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPiArgs, type RunSpec } from "../src/domain/run-spec.ts";
+import { buildPiArgs, sessionIdFor, type RunSpec } from "../src/domain/run-spec.ts";
 
 const baseSpec: RunSpec = {
   tier: "worker",
@@ -42,6 +42,23 @@ describe("buildPiArgs", () => {
   test("uses a deterministic session-id of diablo-<issue>-<stage>-<role>", () => {
     const args = buildPiArgs(baseSpec);
     expect(args[args.indexOf("--session-id") + 1]).toBe("diablo-billing-02-stage-1-worker");
+  });
+
+  test("a runId is embedded in the session-id so runs do not collide", () => {
+    // Pi resumes an existing --session-id (creating it only if missing), so a
+    // session-id that is identical across runs makes a new run resume the old
+    // transcript — the worker reads 'already done' and writes nothing. A per-run
+    // runId keeps steps deterministic within a run but isolated across runs.
+    const args = buildPiArgs({ ...baseSpec, runId: "r42" });
+    expect(args[args.indexOf("--session-id") + 1]).toBe("diablo-billing-02-r42-stage-1-worker");
+  });
+
+  test("the same runId is stable across a run's steps but differs across runs", () => {
+    const a = sessionIdFor({ ...baseSpec, runId: "r1" });
+    const b = sessionIdFor({ ...baseSpec, runId: "r1" });
+    const c = sessionIdFor({ ...baseSpec, runId: "r2" });
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
   });
 
   test("never passes --continue (sessions are isolated, never resumed)", () => {

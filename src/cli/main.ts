@@ -50,15 +50,27 @@ function resolveTicketPaths(location: string): string[] {
     .map((name) => `${location}/${name}`);
 }
 
-function buildDeps(repoRoot: string, overrides: ModelOverrides): RunDiabloDeps {
+function buildDeps(repoRoot: string, overrides: ModelOverrides, runId: string): RunDiabloDeps {
   const runner = new BunProcessRunner();
   const piBinary = `${process.env.HOME}/.bun/bin/pi`;
   return {
-    agent: new PiAgent(piBinary, runner, overrides),
+    agent: new PiAgent(piBinary, runner, overrides, runId),
     git: new GitCli(repoRoot, runner),
     fs: new NodeFs(),
     gate: new StdinGate(),
   };
+}
+
+/**
+ * A unique id for this invocation, embedded in every step's Pi session-id. Pi
+ * resumes an existing session-id, so without this a re-run would resume the
+ * previous run's transcript and the agent would do nothing ("already done").
+ * Timestamp-based so it is readable and sortable; the frozen plan on disk — not
+ * the Pi session — remains the durable handoff, so a fresh runId on resume is
+ * correct.
+ */
+function newRunId(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-").replace(/[TZ]/g, "");
 }
 
 /**
@@ -113,7 +125,8 @@ async function main(argv: string[]): Promise<number> {
 
     case "run": {
       const overrides = buildOverrides(parsed.plannerModel, parsed.workerModel);
-      const deps = buildDeps(process.cwd(), overrides);
+      const runId = newRunId();
+      const deps = buildDeps(process.cwd(), overrides, runId);
       const config = buildRunConfig(process.cwd(), parsed.issue);
       try {
         const result = await runDiablo(deps, config);
