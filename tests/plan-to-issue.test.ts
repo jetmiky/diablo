@@ -107,3 +107,72 @@ describe("planToIssue", () => {
     expect(verifier.instruction.toLowerCase()).toMatch(/verif|verdict|acceptance/);
   });
 });
+
+describe("planToIssue verification stages", () => {
+  // A stage whose purpose is verification (the master-plan skill titles the
+  // final gate "Verification") produces no NEW artifacts — its tests were
+  // already written in earlier TDD worker stages. Giving it a committing worker
+  // makes the worker find nothing to commit and crashes the pipeline on
+  // "nothing to commit". Such a stage must map to a verifier-only step.
+  const verificationPlan: Plan = {
+    stages: [
+      {
+        number: 1,
+        title: "Core logic",
+        tasks: [
+          {
+            id: "T-001",
+            title: "Implement it",
+            objective: "Build the thing.",
+            targetFiles: ["src/thing.ts"],
+            dependencies: [],
+            acceptanceCriteria: ["it works"],
+          },
+        ],
+      },
+      {
+        number: 2,
+        title: "Verification",
+        tasks: [
+          {
+            id: "T-002",
+            title: "Typecheck & test gate",
+            objective: "Confirm the project typechecks and tests pass.",
+            targetFiles: ["package.json"],
+            dependencies: ["T-001"],
+            acceptanceCriteria: ["bun run typecheck passes", "bun test passes"],
+          },
+        ],
+      },
+    ],
+  };
+
+  test("a verification stage runs a single verifier step, no worker", () => {
+    const stage = planToIssue(verificationPlan, config).stages[1]!;
+    expect(stage.steps.map((s) => s.tier)).toEqual(["verifier"]);
+  });
+
+  test("a verification stage's step never commits", () => {
+    const stage = planToIssue(verificationPlan, config).stages[1]!;
+    expect(stage.steps[0]!.commitMessage).toBeUndefined();
+  });
+
+  test("a verification stage's verifier names the stage and its task ids", () => {
+    const verifier = planToIssue(verificationPlan, config).stages[1]!.steps[0]!;
+    expect(verifier.instruction).toContain("stage 2");
+    expect(verifier.instruction).toContain("T-002");
+  });
+
+  test("non-verification stages are unaffected (still worker then verifier)", () => {
+    const stage = planToIssue(verificationPlan, config).stages[0]!;
+    expect(stage.steps.map((s) => s.tier)).toEqual(["worker", "verifier"]);
+  });
+
+  test("matches verification stages case-insensitively by title", () => {
+    const lower: Plan = {
+      stages: [{ ...verificationPlan.stages[1]!, title: "final verification & sign-off" }],
+    };
+    const stage = planToIssue(lower, config).stages[0]!;
+    expect(stage.steps.map((s) => s.tier)).toEqual(["verifier"]);
+  });
+});

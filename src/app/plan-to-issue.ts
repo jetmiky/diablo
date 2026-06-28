@@ -31,6 +31,19 @@ export function planToIssue(plan: Plan, config: PlanToIssueConfig): Issue {
   };
 }
 
+/**
+ * A stage whose purpose is verification (the master-plan skill titles its final
+ * gate "Verification") produces no new artifacts — the tests it checks were
+ * already written in earlier TDD worker stages. Such a stage must NOT get a
+ * committing worker, or the worker finds nothing to commit and the pipeline
+ * crashes. The stage title is the declarative signal from the plan author.
+ */
+const VERIFICATION_TITLE_RE = /verif/i;
+
+function isVerificationStage(stage: PlanStage): boolean {
+  return VERIFICATION_TITLE_RE.test(stage.title);
+}
+
 function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
   const stageId = `stage-${stage.number}`;
   const taskIds = stage.tasks.map((t) => t.id).join(", ");
@@ -39,18 +52,6 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     stage: stageId,
     worktree: config.worktree,
     inputs: [config.planPath],
-  };
-
-  const worker: Step = {
-    ...base,
-    tier: "worker",
-    skills: config.skills.worker,
-    instruction:
-      `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
-      `Follow the plan's tasks and acceptance criteria, and the TDD skill's red-green-refactor discipline. ` +
-      `Work autonomously: do NOT ask for approval or confirmation — there is no human to answer. ` +
-      `Implement the code and tests directly, and run the tests yourself before finishing.`,
-    commitMessage: `feat(${config.issue}): stage ${stage.number} - ${stage.title}`,
   };
 
   const verifier: Step = {
@@ -62,6 +63,24 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
       `acceptance criteria of tasks ${taskIds} in the plan. Report a verdict of ` +
       `acceptable, or list what must change. Do not modify code.`,
     // No commitMessage: a verifier only reads and returns a verdict.
+  };
+
+  // A verification stage is verifier-only: there is nothing new to implement or
+  // commit, just a verdict on already-committed work.
+  if (isVerificationStage(stage)) {
+    return { issue: config.issue, stage: stageId, steps: [verifier] };
+  }
+
+  const worker: Step = {
+    ...base,
+    tier: "worker",
+    skills: config.skills.worker,
+    instruction:
+      `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
+      `Follow the plan's tasks and acceptance criteria, and the TDD skill's red-green-refactor discipline. ` +
+      `Work autonomously: do NOT ask for approval or confirmation — there is no human to answer. ` +
+      `Implement the code and tests directly, and run the tests yourself before finishing.`,
+    commitMessage: `feat(${config.issue}): stage ${stage.number} - ${stage.title}`,
   };
 
   return { issue: config.issue, stage: stageId, steps: [worker, verifier] };
