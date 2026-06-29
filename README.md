@@ -114,6 +114,8 @@ Config is optional — diablo runs with built-in defaults when no file is presen
   },
   "gate": "none",
   "retry": { "limit": 2 },
+  "verify": { "commands": [] },
+  "limits": { "stepTimeoutMs": 1200000, "runBudgetMs": 14400000, "maxSteps": 200 },
 }
 ```
 
@@ -236,6 +238,45 @@ genuinely passed. Note this is orthogonal to `integration.autoMerge`: `gate`
 checkpoints _between stages during_ a run; `autoMerge` decides what happens to
 the branch _after_ the whole run passes. The PRD-approval prompt inside `diablo
 intake` is a separate checkpoint and is unaffected by this field.
+
+#### `verify` — the deterministic gate diablo runs itself
+
+```jsonc
+"verify": { "commands": ["bun run typecheck", "bun test"] }
+```
+
+The commands diablo runs **itself** in the worktree after a verifying step, so a
+stage's verdict is a MEASURED fact, not the verifier model's self-report. Each
+command runs in order; a non-zero exit fails the stage **regardless** of what the
+verifier LLM claimed — a green `VERDICT: PASS` over a failing `bun test` is still
+a FAIL. A measured failure is treated as `[implementation]` and flows into the
+normal worker-retry loop; a genuine LLM `FAIL [plan]` still halts to a human.
+
+| Value                  | Implication                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `[]` (**default**)     | no deterministic gate — verification is the verifier LLM's verdict **alone**. diablo prints a loud warning at the start of each run so you know the gate isn't measured.  |
+| `["bun test", ...]`    | diablo runs each command in the worktree; the measured exit codes have teeth. This is what makes "safe to run AFK" hold even if the model misreports.                    |
+
+Set these to your project's real check commands (`bun run typecheck`, `bun test`,
+`npm test`, `cargo test`, a wrapper script, …). Commands are split on whitespace;
+wrap anything needing shell features in a script and point a command at it.
+
+#### `limits` — safety ceilings for an unattended run
+
+```jsonc
+"limits": {
+  "stepTimeoutMs": 1200000,   // 20 min — a single step is killed past this
+  "runBudgetMs": 14400000,    // 4 h — the whole run aborts past this
+  "maxSteps": 200,            // circuit breaker on total agent steps
+}
+```
+
+Generous defaults that exist to stop a pathological hang or runaway, never to
+clip a legitimately long run. A step exceeding `stepTimeoutMs` is **killed** (the
+underlying process is terminated) and the run halts to a human; a run exceeding
+`runBudgetMs` or `maxSteps` aborts cleanly, preserving committed work and
+reporting which limit tripped. Lower them for tight CI-style runs; raise them for
+genuinely large features on slow models.
 
 #### `skillsDir` — override the vendored skills location
 
