@@ -9,3 +9,7 @@ dist/
 
 # local issue tracker / scratch tickets — working area, not version-controlled
 .scratch/
+
+# pigram local secrets/cache
+.pi/pigram.json
+.pi/tmp/
