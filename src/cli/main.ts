@@ -19,6 +19,7 @@ import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResu
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
+import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
 import { resolveModels, type ConfigModels, type DiabloConfig } from "../domain/config.ts";
 import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
@@ -687,9 +688,19 @@ async function executeIntake(feature: string): Promise<number> {
   const runner = new NodeProcessRunner();
   const piBinary = resolvePiBinary(process.env);
 
-  const interactiveSkill = (skill: string, instruction: string) =>
+  // All intake steps share ONE feature-scoped session so each resumes the prior
+  // step's transcript instead of starting cold. Deliberately NOT runId-stamped:
+  // a stable id means a re-run of `diablo intake <feature>` resumes the session,
+  // matching the "re-run to continue" promise printed at the PRD gate.
+  const sessionId = intakeSessionId(feature);
+
+  const interactiveSkill = (skill: string, instruction: string, inputs: string[] = []) =>
     runner
-      .runInteractive(piBinary, [`@${skillFile(skillsDir, skill)}`, instruction], repoRoot)
+      .runInteractive(
+        piBinary,
+        buildIntakeArgs({ sessionId, skillPath: skillFile(skillsDir, skill), instruction, inputs }),
+        repoRoot,
+      )
       .then(() => {});
 
   const result = await intakeDiablo(
@@ -723,6 +734,7 @@ async function executeIntake(feature: string): Promise<number> {
               ? `Incorporate the state machine modeled at ${ctx.stateMachinePath}. `
               : "") +
             `Write the PRD under ${ctx.scratchDir}.`,
+          ctx.stateMachinePath ? [ctx.stateMachinePath] : [],
         );
       },
       toIssues: (ctx: GrillContext) => {
