@@ -405,6 +405,25 @@ pid and start time.
 - The lock is **per-issue**: different issues run concurrently, unaffected by
   each other's locks.
 
+## Reclaiming a worktree: `diablo clean`
+
+Every run leaves an isolated worktree at `.worktrees/<issue>/` and a
+`diablo/<issue>` branch behind. That's deliberate — `run` is resume-aware and
+reuses them, so **nothing is ever removed automatically** (ADR 0002). When
+you're actually done with an issue, reclaim its space explicitly:
+
+```bash
+diablo clean <issue>              # remove the worktree + delete the branch
+diablo clean <issue> --keep-branch  # remove only the worktree
+diablo clean <issue> --force        # remove even if the branch isn't merged
+```
+
+The safety guard is the point: without `--force`, `clean` **refuses** to remove a
+worktree whose branch is not merged into the target branch — so you can't lose
+unmerged work by accident. With `--force` it skips the guard and force-deletes
+the branch. If the worktree is already gone it's a harmless no-op (idempotent).
+Because nothing auto-deletes, a halted run is always resumable exactly as before.
+
 ## The done gate
 
 A run finishing PASS is necessary but not sufficient — the issue's acceptance

@@ -175,10 +175,20 @@ result against [`feature-convert.md`](feature-convert.md).
 
 ## Cleanup
 
+Once an issue's branch is merged, reclaim its worktree (and branch) with the
+explicit cleanup command — never automatic, so a halted run is always resumable:
+
 ```bash
-git worktree remove .worktrees/currency-convert --force; git branch -D diablo/currency-convert
-git worktree remove .worktrees/currency-cli --force;     git branch -D diablo/currency-cli
-# or just: rm -rf ~/playground/currency-toy
+diablo clean currency-convert    # removes the worktree + deletes the merged branch
+diablo clean currency-cli
+```
+
+`diablo clean` refuses to remove a worktree whose branch isn't merged into the
+target branch; pass `--force` to discard unmerged work anyway, or `--keep-branch`
+to remove only the worktree. To wipe the whole sandbox at once:
+
+```bash
+rm -rf ~/playground/currency-toy
 ```
 
 ---

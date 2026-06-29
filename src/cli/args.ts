@@ -14,6 +14,7 @@ export type ParsedArgs =
   | ({ command: "run"; issue?: string } & ModelFlagArgs)
   | ({ command: "plan"; issue?: string } & ModelFlagArgs)
   | ({ command: "refactor"; area: string } & ModelFlagArgs)
+  | { command: "clean"; issue?: string; force: boolean; keepBranch: boolean }
   | { command: "intake"; feature: string }
   | { command: "telegram"; sub: "setup" }
   | { command: "version" }
@@ -91,6 +92,30 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
 
     return { command: "refactor", area: target, ...flags.models };
+  }
+
+  if (first === "clean") {
+    const maybeIssue = rest[0];
+    let issue: string | undefined;
+    let flagsStart = 0;
+
+    if (maybeIssue === undefined || maybeIssue.startsWith("--")) {
+      issue = undefined;
+      flagsStart = 0;
+    } else {
+      issue = maybeIssue;
+      flagsStart = 1;
+    }
+
+    let force = false;
+    let keepBranch = false;
+    for (const flag of rest.slice(flagsStart)) {
+      if (flag === "--force") force = true;
+      else if (flag === "--keep-branch") keepBranch = true;
+      else return { command: "error", message: `unknown option: ${flag}` };
+    }
+
+    return { command: "clean", issue, force, keepBranch };
   }
 
   return { command: "error", message: `unknown command: ${first}` };

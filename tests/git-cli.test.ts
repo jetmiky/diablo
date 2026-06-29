@@ -290,4 +290,63 @@ describe("GitCli isMerged", () => {
 
     expect(runner.calls[0]!.cwd).toBe("/custom/repo");
   });
+
+  test("worktreeRemove runs `git worktree remove <path>` in repoRoot (no force)", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.worktreeRemove("/proj/.worktrees/billing-02", false);
+
+    expect(runner.calls[0]!.args).toEqual(["worktree", "remove", "/proj/.worktrees/billing-02"]);
+    expect(runner.calls[0]!.cwd).toBe("/proj");
+  });
+
+  test("worktreeRemove adds --force when forced", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.worktreeRemove("/proj/.worktrees/billing-02", true);
+
+    expect(runner.calls[0]!.args).toEqual([
+      "worktree",
+      "remove",
+      "--force",
+      "/proj/.worktrees/billing-02",
+    ]);
+  });
+
+  test("worktreeRemove throws on non-zero exit, including stderr", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "fatal: contains modified files", exitCode: 1 });
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.worktreeRemove("/proj/.worktrees/x", false)).rejects.toThrow(
+      /contains modified files/,
+    );
+  });
+
+  test("branchDelete uses -d (safe) when not forced", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.branchDelete("diablo/billing-02", false);
+
+    expect(runner.calls[0]!.args).toEqual(["branch", "-d", "diablo/billing-02"]);
+    expect(runner.calls[0]!.cwd).toBe("/proj");
+  });
+
+  test("branchDelete uses -D (force) when forced", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    await git.branchDelete("diablo/billing-02", true);
+
+    expect(runner.calls[0]!.args).toEqual(["branch", "-D", "diablo/billing-02"]);
+  });
+
+  test("branchDelete throws on non-zero exit, including stderr", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "error: branch not fully merged", exitCode: 1 });
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.branchDelete("diablo/x", false)).rejects.toThrow(/not fully merged/);
+  });
 });

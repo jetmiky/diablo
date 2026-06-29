@@ -183,6 +183,37 @@ export class GitCli implements GitPort, GitMergePort {
     );
   }
 
+  /**
+   * Remove the worktree at `worktree` via `git worktree remove`, run from the
+   * primary working copy. `force` adds --force so a worktree with a dirty or
+   * modified tree is still removed (the caller's --force, gated by cleanIssue's
+   * merged check). Throws on git failure.
+   */
+  async worktreeRemove(worktree: string, force: boolean): Promise<void> {
+    const args = ["worktree", "remove", ...(force ? ["--force"] : []), worktree];
+    const outcome = await this.runner.run("git", args, this.repoRoot);
+    if (outcome.exitCode !== 0) {
+      throw new Error(
+        `git worktree remove failed with code ${outcome.exitCode}.\n${outcome.stderr.trim()}`,
+      );
+    }
+  }
+
+  /**
+   * Delete `branch` via `git branch` from the primary working copy. `force`
+   * selects -D (drop even an unmerged branch); otherwise -d (git's own
+   * merged-safety check). Throws on git failure.
+   */
+  async branchDelete(branch: string, force: boolean): Promise<void> {
+    const flag = force ? "-D" : "-d";
+    const outcome = await this.runner.run("git", ["branch", flag, branch], this.repoRoot);
+    if (outcome.exitCode !== 0) {
+      throw new Error(
+        `git branch ${flag} ${branch} failed with code ${outcome.exitCode}.\n${outcome.stderr.trim()}`,
+      );
+    }
+  }
+
   /** The files with merge conflicts (unmerged, diff-filter=U). */
   private async conflictingFiles(): Promise<string[]> {
     const outcome = await this.runner.run(

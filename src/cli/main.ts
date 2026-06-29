@@ -21,6 +21,7 @@ import {
   type RunLockHandle,
 } from "../adapters/run-lock-file.ts";
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResult } from "../app/run-diablo.ts";
+import { cleanIssue } from "../app/clean-issue.ts";
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
@@ -65,6 +66,7 @@ Usage:
   diablo plan [issue]    Negotiate a plan with the planner, then freeze it
   diablo run [issue]     Run an issue's stages through the agent pipeline
   diablo refactor <area> Refactor an area (same pipeline, refactor planner skill)
+  diablo clean [issue]   Remove an issue's worktree (and branch) once you're done
   diablo telegram setup  Configure per-repo Telegram push credentials
   diablo --version       Print the version
   diablo --help          Show this help
@@ -77,6 +79,10 @@ Run options (override diablo.config.json, which overrides built-in defaults):
   --planner-model <m>    Override the planner model (e.g. claude-sonnet-4.5)
   --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
   --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
+
+Clean options:
+  --force                Remove even if the branch isn't merged (discards work)
+  --keep-branch          Remove the worktree but keep the diablo/<issue> branch
 `;
 
 const CONFIG_FILENAME = "diablo.config.json";
@@ -373,6 +379,12 @@ async function main(argv: string[]): Promise<number> {
 
     case "intake": {
       return executeIntake(parsed.feature);
+    }
+
+    case "clean": {
+      const issue = parsed.issue ?? (await selectIssue("run"));
+      if (issue === undefined) return 2;
+      return executeClean(issue, parsed.force, parsed.keepBranch);
     }
 
     case "telegram": {
@@ -900,10 +912,48 @@ async function executeIntake(feature: string): Promise<number> {
 }
 
 /**
- * Runs `diablo telegram setup`: interactively collects the bot token + chat id
- * and writes them to the per-repo credential file (.diablo/telegram.json). This
- * is what makes the credentials machine-written — and thus at home in the
- * machine-managed .diablo/ runtime dir, where they inherit its gitignore rule.
+ * `diablo clean [issue]` — explicit, user-invoked teardown of an issue's
+ * worktree and (by default) its branch. Per ADR 0002 nothing auto-deletes; this
+ * is the only removal path. Refuses to remove an unmerged branch unless --force,
+ * so a halted-but-resumable run is never destroyed by accident.
+ */
+async function executeClean(issue: string, force: boolean, keepBranch: boolean): Promise<number> {
+  const repoRoot = process.cwd();
+  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
+  const runner = new NodeProcessRunner();
+  const git = new GitCli(repoRoot, runner);
+
+  const worktree = `${repoRoot}/.worktrees/${issue}`;
+  const branch = `${config.integration.branchPrefix}${issue}`;
+
+  const result = await cleanIssue(
+    { fs: new NodeFs(), git, merge: git },
+    {
+      issue,
+      worktree,
+      branch,
+      targetBranch: config.integration.targetBranch,
+      deleteBranch: !keepBranch,
+      force,
+    },
+  );
+
+  switch (result.status) {
+    case "nothing":
+      process.stdout.write(`\nNothing to clean: no worktree at ${worktree}.\n`);
+      return 0;
+    case "refused":
+      process.stderr.write(`\nerror: ${result.reason}\n`);
+      return 1;
+    case "cleaned":
+      process.stdout.write(
+        `\n✅ cleaned ${issue} — removed worktree${result.deletedBranch ? ` and deleted branch ${branch}` : ""}.\n`,
+      );
+      return 0;
+  }
+}
+
+/**
  * Foreground and interactive (a setup question, like init); not the AFK run.
  */
 async function executeTelegramSetup(): Promise<number> {

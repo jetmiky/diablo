@@ -208,4 +208,45 @@ describe("parseArgs", () => {
       expect(parsed.message).toMatch(/telegram|setup/i);
     }
   });
+
+  test("parses 'clean <issue>' with defaults (no force, delete branch)", () => {
+    expect(parseArgs(["clean", "billing-02"])).toEqual({
+      command: "clean",
+      issue: "billing-02",
+      force: false,
+      keepBranch: false,
+    });
+  });
+
+  test("clean without an issue is valid (bare clean → selector)", () => {
+    expect(parseArgs(["clean"])).toEqual({
+      command: "clean",
+      issue: undefined,
+      force: false,
+      keepBranch: false,
+    });
+  });
+
+  test("clean parses --force and --keep-branch in any order", () => {
+    expect(parseArgs(["clean", "billing-02", "--force", "--keep-branch"])).toEqual({
+      command: "clean",
+      issue: "billing-02",
+      force: true,
+      keepBranch: true,
+    });
+    expect(parseArgs(["clean", "--keep-branch"])).toEqual({
+      command: "clean",
+      issue: undefined,
+      force: false,
+      keepBranch: true,
+    });
+  });
+
+  test("clean with an unknown option is an error", () => {
+    const parsed = parseArgs(["clean", "billing-02", "--nope"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/unknown option/i);
+    }
+  });
 });
