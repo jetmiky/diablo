@@ -35,6 +35,25 @@ export interface Plan {
   stages: PlanStage[];
 }
 
+/**
+ * Thrown when the frozen plan markdown does not match the master-plan skill's
+ * contract. Carries a `diagnostic` — a specific, actionable description of what
+ * was expected and not found — so the run can (a) halt with a message a human
+ * can act on, and (b) re-ask the planner with the exact complaint injected,
+ * rather than crashing with a generic error after the priciest step has run.
+ */
+export class PlanParseError extends Error {
+  constructor(readonly diagnostic: string) {
+    super(diagnostic);
+    this.name = "PlanParseError";
+  }
+}
+
+const FORMAT_HINT =
+  `Expected the master-plan format: one or more '### Stage N - Title' headings, ` +
+  `each followed by one or more '[T-00X] - Task title' tasks with '- Objective:', ` +
+  `'- Target Files:', '- Dependency:', and '- Acceptance Criterias:' fields.`;
+
 const STAGE_RE = /^#{2,4}\s+Stage\s+(\d+)\s*[-:–—]\s*(.+?)\s*$/;
 const TASK_RE = /^\[(T-\d+)\]\s*-\s*(.+?)\s*$/;
 const FIELD_RE = /^-\s*(Objective|Target Files|Dependency|Acceptance Criterias)\s*:\s*(.*)$/;
@@ -108,11 +127,16 @@ export function parsePlan(markdown: string): Plan {
   finishTask();
 
   if (stages.length === 0) {
-    throw new Error("Plan has no stages (expected '## Stage N - Title' headings)");
+    throw new PlanParseError(
+      `Plan has no stages (expected '### Stage N - Title' headings). ${FORMAT_HINT}`,
+    );
   }
   for (const s of stages) {
     if (s.tasks.length === 0) {
-      throw new Error(`Plan stage ${s.number} (${s.title}) has no tasks`);
+      throw new PlanParseError(
+        `Plan stage ${s.number} (${s.title}) has no tasks ` +
+          `(expected one or more '[T-00X] - Task title' lines under the stage heading). ${FORMAT_HINT}`,
+      );
     }
   }
 

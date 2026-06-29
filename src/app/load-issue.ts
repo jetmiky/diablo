@@ -15,7 +15,7 @@ import type { GitPort } from "../ports/git.ts";
 import type { FsPort } from "../ports/fs.ts";
 import type { RunSpec } from "../domain/run-spec.ts";
 import type { GateMode } from "../ports/gate.ts";
-import { parsePlan } from "../domain/plan.ts";
+import { parsePlan, PlanParseError, type Plan } from "../domain/plan.ts";
 import { planToIssue } from "./plan-to-issue.ts";
 import type { Issue } from "./run-issue.ts";
 
@@ -63,8 +63,7 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
     }
   }
 
-  const markdown = await deps.fs.read(config.planPath);
-  const plan = parsePlan(markdown);
+  const plan = await parseWithBoundedReask(deps, config);
 
   return planToIssue(plan, {
     issue: config.issue,
@@ -79,12 +78,45 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
   });
 }
 
-async function generatePlan(deps: LoadIssueDeps, config: LoadIssueConfig): Promise<void> {
-  const instruction =
+/**
+ * Parses the frozen plan, with ONE bounded recovery attempt on a malformed plan.
+ * The planner is an LLM; an occasional format drift should not waste the
+ * priciest step in the run and then crash. On a PlanParseError we re-run the
+ * planner ONCE with the parser's specific diagnostic injected as feedback, then
+ * re-parse. A second consecutive failure propagates the PlanParseError so the
+ * caller halts cleanly to a human — never an unbounded re-ask loop, which would
+ * keep burning planner calls. Mirrors run-stage's bounded FAIL retry pattern.
+ */
+async function parseWithBoundedReask(deps: LoadIssueDeps, config: LoadIssueConfig): Promise<Plan> {
+  try {
+    return parsePlan(await deps.fs.read(config.planPath));
+  } catch (err) {
+    if (!(err instanceof PlanParseError)) throw err;
+
+    // One re-ask: re-run the planner with the exact complaint, then re-parse.
+    await generatePlan(deps, config, err.diagnostic);
+    return parsePlan(await deps.fs.read(config.planPath));
+  }
+}
+
+async function generatePlan(
+  deps: LoadIssueDeps,
+  config: LoadIssueConfig,
+  reaskDiagnostic?: string,
+): Promise<void> {
+  const baseInstruction =
     config.plannerInstruction ??
     `Create the frozen master plan for this issue following the master-plan skill. ` +
       `Break the ticket(s) into sequenced stages and T-00X tasks, and write the plan to ` +
       `${config.planPath}.`;
+
+  // On a re-ask, lead with the parser's complaint so the planner fixes the
+  // specific format defect rather than blindly regenerating.
+  const instruction = reaskDiagnostic
+    ? `Your previous plan could not be parsed: ${reaskDiagnostic}\n\n` +
+      `Rewrite the plan to ${config.planPath} so it parses, following the format above. ` +
+      baseInstruction
+    : baseInstruction;
 
   const spec: RunSpec = {
     tier: "planner-high",

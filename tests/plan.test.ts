@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parsePlan } from "../src/domain/plan.ts";
+import { parsePlan, PlanParseError } from "../src/domain/plan.ts";
 
 // Mirrors the master-plan skill's frozen-plan format exactly.
 const samplePlan = `# Onboarding Init Cleanup - Plan
@@ -85,6 +85,30 @@ describe("parsePlan", () => {
   test("throws when a stage has no tasks", () => {
     const bad = `## Stages\n\n### Stage 1 - Empty\n\nnothing\n`;
     expect(() => parsePlan(bad)).toThrow(/stage 1.*no tasks/i);
+  });
+
+  test("a parse failure is a typed PlanParseError carrying an actionable diagnostic", () => {
+    try {
+      parsePlan("# Plan\n\nNo stages here.");
+      throw new Error("expected parsePlan to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PlanParseError);
+      // The diagnostic names what was expected, so a re-ask can be specific.
+      expect((err as PlanParseError).diagnostic).toMatch(/stage/i);
+      expect((err as PlanParseError).diagnostic).toMatch(/### Stage|heading/i);
+    }
+  });
+
+  test("the no-tasks failure is a PlanParseError naming the offending stage", () => {
+    const bad = `## Stages\n\n### Stage 1 - Empty\n\nnothing\n`;
+    try {
+      parsePlan(bad);
+      throw new Error("expected parsePlan to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PlanParseError);
+      expect((err as PlanParseError).diagnostic).toMatch(/stage 1/i);
+      expect((err as PlanParseError).diagnostic).toMatch(/task|\[T-/i);
+    }
   });
 
   test("accepts stage headings at H2, H3, or H4 (heading level varies in practice)", () => {

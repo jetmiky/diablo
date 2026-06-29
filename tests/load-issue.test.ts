@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { loadIssue, type LoadIssueConfig, type LoadIssueDeps } from "../src/app/load-issue.ts";
+import { PlanParseError } from "../src/domain/plan.ts";
 import type { AgentPort } from "../src/ports/agent.ts";
 import type { GitPort } from "../src/ports/git.ts";
 import type { FsPort } from "../src/ports/fs.ts";
@@ -145,5 +146,51 @@ describe("loadIssue", () => {
     await loadIssue(deps(agent, fs), config);
 
     expect(agent.calls[0]!.instruction.toLowerCase()).toMatch(/master plan|master-plan/);
+  });
+
+  // --- issue 08: bounded re-ask on a malformed plan ---
+
+  const MALFORMED = `# Plan\n\nI forgot the stage headings entirely.\n`;
+
+  test("re-asks the planner ONCE when the first plan fails to parse, then succeeds", async () => {
+    const fs = new FakeFs();
+    let call = 0;
+    // First planner run writes a malformed plan; the re-ask writes a valid one.
+    const agent = new FakeAgent(() => {
+      call += 1;
+      fs.write(config.planPath, call === 1 ? MALFORMED : PLAN);
+    });
+    const issue = await loadIssue(deps(agent, fs), config);
+
+    expect(agent.calls).toHaveLength(2); // original + one bounded re-ask
+    expect(issue.stages).toHaveLength(1); // recovered
+  });
+
+  test("the re-ask injects the parser's diagnostic as feedback", async () => {
+    const fs = new FakeFs();
+    let call = 0;
+    const agent = new FakeAgent(() => {
+      call += 1;
+      fs.write(config.planPath, call === 1 ? MALFORMED : PLAN);
+    });
+    await loadIssue(deps(agent, fs), config);
+
+    const reask = agent.calls[1]!.instruction.toLowerCase();
+    expect(reask).toMatch(/could not be parsed|did not parse|failed to parse/);
+    expect(reask).toMatch(/stage/); // the specific complaint is carried in
+  });
+
+  test("a SECOND consecutive parse failure surfaces a PlanParseError (caller halts to human)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, MALFORMED)); // never recovers
+    await expect(loadIssue(deps(agent, fs), config)).rejects.toBeInstanceOf(PlanParseError);
+    expect(agent.calls).toHaveLength(2); // original + exactly one re-ask, then gives up
+  });
+
+  test("a well-formed plan never triggers a re-ask", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    await loadIssue(deps(agent, fs), config);
+    expect(agent.calls).toHaveLength(1); // no re-ask on the happy path
   });
 });

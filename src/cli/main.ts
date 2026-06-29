@@ -45,6 +45,7 @@ import { finalizeIssue } from "../app/finalize-issue.ts";
 import { readStatus, writeStatus } from "../app/issue-status-store.ts";
 import { listFor, type SelectorContext } from "../domain/issue-listing.ts";
 import { VerificationFailedError } from "../app/run-step.ts";
+import { PlanParseError } from "../domain/plan.ts";
 
 const VERSION = "0.1.0";
 
@@ -565,6 +566,17 @@ async function executeRun(
     if (err instanceof VerificationFailedError) {
       await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
       process.stdout.write(`\n⚠️  ${noun} ${target} halted at verification — status: needs-human.\n`);
+      return 1;
+    }
+    if (err instanceof PlanParseError) {
+      // The planner's plan could not be parsed even after one bounded re-ask
+      // (see loadIssue). Halt cleanly with the diagnostic rather than crashing
+      // with a raw stack — the plan needs a human's eye, not another retry.
+      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
+      process.stdout.write(
+        `\n⚠️  ${noun} ${target} halted: the plan could not be parsed after a re-ask — status: needs-human.\n` +
+          `   ${err.diagnostic}\n`,
+      );
       return 1;
     }
     throw err;
