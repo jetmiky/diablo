@@ -61,7 +61,7 @@ export function defaultConfig(): DiabloConfig {
       branchPrefix: "diablo/",
       autoMerge: false,
     },
-    gate: "approval",
+    gate: "none",
     retry: { limit: 2 },
   };
 }

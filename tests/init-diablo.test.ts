@@ -78,7 +78,7 @@ describe("initDiablo", () => {
 
     expect(fs.files.has(CONFIG_PATH)).toBe(true);
     const parsed = parseConfig(fs.files.get(CONFIG_PATH)!);
-    expect(parsed.gate).toBe("approval");
+    expect(parsed.gate).toBe("none");
     expect(parsed.integration.autoMerge).toBe(false);
   });
 

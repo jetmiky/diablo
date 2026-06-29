@@ -26,7 +26,7 @@ import { ProgressMdAdapter } from "../adapters/progress-md.ts";
 import { TelegramProgress } from "../adapters/telegram-progress.ts";
 import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
 import { FanOutProgress } from "../adapters/fan-out-progress.ts";
-import { GateDeclinedError } from "../ports/gate.ts";
+import { GateDeclinedError, type GateMode } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
 
@@ -183,6 +183,7 @@ function buildRunConfig(
   skillsDir: string,
   retry: { limit: number },
   integration: { targetBranch: string; branchPrefix: string; autoMerge: boolean },
+  gate: GateMode,
   flow: PlannerFlow,
 ): RunDiabloConfig {
   const worktree = `${repoRoot}/.worktrees/${target}`;
@@ -193,6 +194,7 @@ function buildRunConfig(
     worktree,
     retry,
     integration,
+    gate,
     ticketPaths: flow.ticketPaths(repoRoot, target),
     planPath,
     plannerInstruction: flow.instruction(planPath),
@@ -289,6 +291,7 @@ async function executeRun(
     skillsDir,
     config.retry,
     config.integration,
+    config.gate,
     flow,
   );
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;

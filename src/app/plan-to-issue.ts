@@ -23,6 +23,7 @@ import type { Plan, PlanStage } from "../domain/plan.ts";
 import type { Issue } from "./run-issue.ts";
 import type { Stage } from "./run-stage.ts";
 import type { Step } from "./run-step.ts";
+import type { GateMode } from "../ports/gate.ts";
 
 export interface PlanToIssueConfig {
   issue: string;
@@ -35,6 +36,16 @@ export interface PlanToIssueConfig {
     worker: string[];
     verifier: string[];
   };
+  /**
+   * The human-checkpoint mode for the run. "approval" attaches a gate to every
+   * VERIFYING step (each per-stage verifier and the final whole-feature
+   * verification) — run-step consults it AFTER the verdict is enforced, so the
+   * human approves work that has already passed verification. "none" (the
+   * default) leaves every step AFK. The design and worker steps are never
+   * gated: the worker runs unattended, and approving a stage means approving its
+   * VERIFIED result, not its raw mid-flight diff.
+   */
+  gate?: GateMode;
 }
 
 export function planToIssue(plan: Plan, config: PlanToIssueConfig): Issue {
@@ -78,6 +89,9 @@ const VERDICT_INSTRUCTION =
 function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
   const stageId = `stage-${stage.number}`;
   const taskIds = stage.tasks.map((t) => t.id).join(", ");
+  // "approval" attaches the human gate to verifying steps only; run-step
+  // consults it after the verdict passes. Anything else (incl. omitted) is AFK.
+  const verifyGate: GateMode = config.gate === "approval" ? "approval" : "none";
   const base = {
     issue: config.issue,
     stage: stageId,
@@ -93,6 +107,7 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
       tier: "planner-med",
       skills: config.skills.verifier,
       verifies: true,
+      gate: verifyGate,
       instruction:
         `Perform the FINAL verification for stage ${stage.number} ("${stage.title}"): a holistic ` +
         `judgment over the WHOLE feature, not a single stage's diff. Check the committed work ` +
@@ -141,6 +156,7 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     ...base,
     tier: "verifier",
     skills: config.skills.verifier,
+    gate: verifyGate,
     instruction:
       `Verify stage ${stage.number} ("${stage.title}"): check the committed work against the ` +
       `acceptance criteria of tasks ${taskIds} in the plan. ` +

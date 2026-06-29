@@ -21,7 +21,7 @@ describe("parseConfig", () => {
     expect(cfg.integration.targetBranch).toBe("main");
     expect(cfg.integration.branchPrefix).toBe("diablo/");
     expect(cfg.integration.autoMerge).toBe(false);
-    expect(cfg.gate).toBe("approval");
+    expect(cfg.gate).toBe("none");
     expect(cfg.retry.limit).toBe(2);
   });
 

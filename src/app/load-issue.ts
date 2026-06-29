@@ -14,6 +14,7 @@ import type { AgentPort } from "../ports/agent.ts";
 import type { GitPort } from "../ports/git.ts";
 import type { FsPort } from "../ports/fs.ts";
 import type { RunSpec } from "../domain/run-spec.ts";
+import type { GateMode } from "../ports/gate.ts";
 import { parsePlan } from "../domain/plan.ts";
 import { planToIssue } from "./plan-to-issue.ts";
 import type { Issue } from "./run-issue.ts";
@@ -38,6 +39,11 @@ export interface LoadIssueConfig {
    * tells the planner what to produce and where to write it.
    */
   plannerInstruction?: string;
+  /**
+   * The human-checkpoint mode, passed through to the mapped pipeline steps.
+   * "approval" gates each verifying step; "none"/omitted runs AFK.
+   */
+  gate?: GateMode;
 }
 
 export interface LoadIssueDeps {
@@ -69,6 +75,7 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
       worker: config.skills.worker,
       verifier: config.skills.verifier,
     },
+    gate: config.gate,
   });
 }
 

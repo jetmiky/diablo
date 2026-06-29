@@ -179,6 +179,48 @@ describe("planToIssue", () => {
   });
 });
 
+describe("planToIssue gate wiring", () => {
+  // The gate fires AFTER a verifier returns PASS (run-step's maybeGate runs once
+  // the verdict is enforced), so the human approval checkpoint lands at each
+  // stage's verification boundary — not before the work is judged.
+  test("gate 'approval' puts the approval gate on the per-stage verifier", () => {
+    const verifier = planToIssue(plan, { ...config, gate: "approval" })
+      .stages[0]!.steps.find((s) => s.tier === "verifier")!;
+    expect(verifier.gate).toBe("approval");
+  });
+
+  test("gate 'approval' leaves the design and worker steps AFK (gated only at verification)", () => {
+    const [design, worker] = planToIssue(plan, { ...config, gate: "approval" }).stages[0]!.steps;
+    // The worker runs unattended and is told not to ask for approval; only the
+    // verifier (post-PASS) is where the human is consulted.
+    expect(design!.gate).not.toBe("approval");
+    expect(worker!.gate).not.toBe("approval");
+  });
+
+  test("gate 'approval' also gates the FINAL whole-feature verification step", () => {
+    const verificationPlan: Plan = {
+      stages: [
+        plan.stages[0]!,
+        { number: 2, title: "Verification", tasks: [{ ...plan.stages[0]!.tasks[0]!, id: "T-099" }] },
+      ],
+    };
+    const finalVerify = planToIssue(verificationPlan, { ...config, gate: "approval" }).stages[1]!.steps[0]!;
+    expect(finalVerify.gate).toBe("approval");
+  });
+
+  test("gate 'none' gates no step (fully AFK)", () => {
+    for (const step of planToIssue(plan, { ...config, gate: "none" }).stages[0]!.steps) {
+      expect(step.gate).not.toBe("approval");
+    }
+  });
+
+  test("gate omitted defaults to AFK (back-compat: no approval gate)", () => {
+    for (const step of planToIssue(plan, config).stages[0]!.steps) {
+      expect(step.gate).not.toBe("approval");
+    }
+  });
+});
+
 describe("planToIssue verification stages", () => {
   // A stage whose purpose is verification (the master-plan skill titles the
   // final gate "Verification") produces no NEW artifacts — its tests were

@@ -1,10 +1,10 @@
 # Diablo
 
-A central conductor that runs your skills through the [Pi coding agent](https://github.com/badlogic/pi-mono) in isolated git worktrees, stopping at human gates and handing work off as git commits.
+A central conductor that runs your skills through the [Pi coding agent](https://github.com/earendil-works/pi) in isolated git worktrees, stopping at human gates and handing work off as git commits.
 
 ## What it is
 
-Diablo is **not the brain** — your skills are. Diablo is the conductor: it decides *which* model tier runs *which* skill, in *which* worktree, reading *which* inputs, then stops at *which* human gate.
+Diablo is **not the brain** — your skills are. Diablo is the conductor: it decides _which_ model tier runs _which_ skill, in _which_ worktree, reading _which_ inputs, then stops at _which_ human gate.
 
 - **Skill-driven** — your skills provide the procedures (grilling, PRD, issues, TDD, handoff, refactor). Diablo injects them into Pi via `@file` references.
 - **Central, not a swarm** — one conductor dispatches Pi runs synchronously. No daemon, no message bus, no scheduler.
@@ -23,12 +23,12 @@ Early development. Building the core step-execution primitive first (sequential,
 
 ## Model tiers
 
-| Tier | Model | Thinking | Used for |
-|------|-------|----------|----------|
-| planner-high | `kr/claude-opus-4.8` | high | grilling, master plan |
-| planner-med | `kr/claude-opus-4.8` | medium | per-stage design (grounded in committed code), final verification |
-| worker | `kr/claude-sonnet-4.5` | medium | implementation |
-| verifier | `kr/claude-sonnet-4.5` | medium | per-stage verification |
+| Tier         | Model               | Thinking | Used for                                                          |
+| ------------ | ------------------- | -------- | ----------------------------------------------------------------- |
+| planner-high | `claude-opus-4.8`   | high     | grilling, master plan                                             |
+| planner-med  | `claude-opus-4.8`   | medium   | per-stage design (grounded in committed code), final verification |
+| worker       | `claude-sonnet-4.5` | medium   | implementation                                                    |
+| verifier     | `claude-sonnet-4.5` | medium   | per-stage verification                                            |
 
 Each implementation stage runs **design → worker → verifier**: a `planner-med`
 design step reads the code prior stages actually committed and writes a short
@@ -51,18 +51,137 @@ Config is optional — diablo runs with built-in defaults when no file is presen
 
 ```jsonc
 {
-  "models":      { "planner": "claude-opus-4.8", "worker": "claude-sonnet-4.5", "verifier": "claude-sonnet-4.5" },
-  "integration": { "targetBranch": "main", "branchPrefix": "diablo/", "autoMerge": false },
-  "gate":        "approval",
-  "retry":       { "limit": 2 }
+  "models": {
+    "planner": "claude-opus-4.8",
+    "worker": "claude-sonnet-4.5",
+    "verifier": "claude-sonnet-4.5",
+  },
+  "integration": {
+    "targetBranch": "main",
+    "branchPrefix": "diablo/",
+    "autoMerge": false,
+  },
+  "gate": "none",
+  "retry": { "limit": 2 },
 }
 ```
 
-Model selection follows three layers, each overriding the one before:
+This block shows the built-in defaults — writing it out is the same as writing
+`{}`. Every field is optional. A present key overrides only itself; everything else
+keeps its built-in default. A malformed value (bad JSON, wrong type, unknown
+enum) fails loudly at load time rather than silently reverting — so a typo can
+never quietly change how a run behaves.
+
+### Field reference
+
+#### `models` — which model runs each tier
+
+```jsonc
+"models": {
+  "planner": "claude-opus-4.8",    // grilling, master plan, per-stage design, final verify
+  "worker": "claude-sonnet-4.5",   // implementation
+  "verifier": "claude-sonnet-4.5", // per-stage verification
+}
+```
+
+Each value is a model **name** only — diablo adds the provider (`9router/kr`)
+and the per-tier thinking level (`planner` → high/medium, `worker`/`verifier` →
+medium) at run time. You set _what_ model; the tier table owns _how hard it
+thinks_.
+
+| Value | Implication |
+| ----- | ----------- |
+| omitted (default) | planner `claude-opus-4.8`, worker & verifier `claude-sonnet-4.5` — the cost/quality split the pipeline is tuned for: an expensive brain plans and judges, cheaper hands implement. |
+| a stronger worker (e.g. `claude-opus-4.8`) | higher implementation quality, materially higher cost and latency on the step that runs most often. |
+| a cheaper planner/verifier (e.g. `claude-haiku-4.5`) | faster, cheaper toy/scratch runs; weaker plans and shallower verdicts, so a bad plan or a missed regression is more likely to slip through. |
+
+Precedence (each layer overrides the one before):
 
 ```
 built-in defaults  ←  diablo.config.json  ←  CLI flag (--planner-model, ...)
 ```
+
+So `--worker-model claude-haiku-4.5` on a single `diablo run` beats the config
+for that run only, without editing the file.
+
+#### `integration` — what happens to the work branch after a passing run
+
+```jsonc
+"integration": {
+  "targetBranch": "main",      // branch work is cut from, and merged back into
+  "branchPrefix": "diablo/",   // work branch is <prefix><issue>
+  "autoMerge": false,          // merge into targetBranch on PASS, or leave it
+}
+```
+
+| Field | Values | Implication |
+| ----- | ------ | ----------- |
+| `targetBranch` | any branch name (default `main`) | the work branch is cut FROM this and (if `autoMerge`) merged back INTO it. Point it at `develop` or a release branch to keep `main` untouched. |
+| `branchPrefix` | any string (default `diablo/`) | the work branch is `<branchPrefix><issue>`. Change it to namespace diablo's branches (e.g. `bot/`, `ai/`) for branch-protection or filtering. |
+| `autoMerge: false` | **default** | on a final PASS the branch is left intact and diablo prints the exact `git merge` command. A passing verdict is not the same as "the human wants this in main" — you stay the gatekeeper of the trunk. |
+| `autoMerge: true` | opt-in | a clean merge lands automatically in the primary working copy. A merge **conflict** is never auto-resolved: diablo aborts the merge cleanly, lists the conflicting files, and prints the manual command. |
+
+#### `retry` — how many times a failed implementation re-tries before halting
+
+```jsonc
+"retry": { "limit": 2 }
+```
+
+`limit` is the number of EXTRA worker attempts after the first, on a verifier
+`VERDICT: FAIL [implementation]`. The failed verifier feedback is injected into
+the re-run so it fixes the specific defect rather than blindly redoing the stage.
+
+| Value | Implication |
+| ----- | ----------- |
+| `0` | fail-fast — the first implementation FAIL halts the stage to a human. Cheapest, least autonomous. |
+| `2` (default) | up to two self-corrections per stage before halting. Absorbs most "almost right" worker misses without supervision. |
+| higher | more autonomy on flaky stages, but more spend on a stage that may be failing for a structural reason a retry can't fix. |
+
+Note: a `VERDICT: FAIL [plan]` (the plan itself is wrong, not the code) **always**
+halts immediately regardless of `limit` — diablo never auto-replans, because the
+frozen plan is a hard contract. Retries only ever re-run the worker.
+
+#### `gate` — human approval checkpoint
+
+```jsonc
+"gate": "none"   // or "approval"
+```
+
+Controls whether `diablo run` / `diablo refactor` pause for a human `y/N` during
+an otherwise-autonomous run. The pause fires **after a stage's work is committed
+AND has passed verification** — so you're approving a verified result, not a raw
+mid-flight diff. Decline (anything not starting with `y`, including a bare Enter)
+halts the run cleanly: the committed work stays on the worktree branch and the
+pipeline stops with a clear message — a human halt, not a failure.
+
+| Value | Implication |
+| ----- | ----------- |
+| `"none"` | **default** — fully AFK. No step ever pauses; the run goes from plan to final verdict to integration without asking. This is diablo's autonomous-conductor identity. |
+| `"approval"` | a `y/N` checkpoint after **every verifying step**: each per-stage verifier (once the stage passes) and the final whole-feature verification. You review each verified chunk and decide whether to proceed to the next stage. |
+
+What is **not** gated, even under `"approval"`: the design and worker steps. The
+worker runs unattended (it's explicitly told not to ask for approval, since
+there's no human in its loop), and the retry loop self-corrects an implementation
+FAIL before the gate is ever consulted — so you're only asked once a stage has
+genuinely passed. Note this is orthogonal to `integration.autoMerge`: `gate`
+checkpoints *between stages during* a run; `autoMerge` decides what happens to
+the branch *after* the whole run passes. The PRD-approval prompt inside `diablo
+intake` is a separate checkpoint and is unaffected by this field.
+
+#### `skillsDir` — override the vendored skills location
+
+```jsonc
+"skillsDir": "/abs/path/to/skills"
+```
+
+Omitted (the default), diablo resolves the `skills/` directory **vendored into its
+own package** by walking up from its module location — never your project's cwd,
+so a fresh clone is self-contained and `diablo run` works from any directory. Set
+this only if you deliberately want to point the engine at a different skills set
+(e.g. a local fork while debugging the plan parser). Pointing it at skills whose
+`master-plan` output doesn't match diablo's plan parser will break plan loading —
+this is the escape hatch the memory note calls "fork only when a hard contract
+forces it."
 
 ## Branch integration
 
@@ -100,13 +219,13 @@ cannot be AFK — so it is a separate command:
 ## Run vs refactor
 
 `diablo run <issue>` and `diablo refactor <area>` share ONE engine — the same
-design → worker → verifier → final-verify pipeline, integration, and gates. They
-differ only in the planner skill injected:
+design → worker → verifier → final-verify pipeline and integration. They differ
+only in the planner skill injected:
 
-| Command | Planner skill | Produces |
-|---------|---------------|----------|
-| `diablo run <issue>` | `master-plan` | an implementation plan from a ticket |
-| `diablo refactor <area>` | `improve-codebase-architecture` | a refactor plan for an area |
+| Command                  | Planner skill                   | Produces                             |
+| ------------------------ | ------------------------------- | ------------------------------------ |
+| `diablo run <issue>`     | `master-plan`                   | an implementation plan from a ticket |
+| `diablo refactor <area>` | `improve-codebase-architecture` | a refactor plan for an area          |
 
 Refactor is human-initiated, never auto-detected — deciding "this is large enough
 to refactor" is a human judgment. A refactor plan can surface new issues, which

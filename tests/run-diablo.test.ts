@@ -4,6 +4,7 @@ import type { AgentPort } from "../src/ports/agent.ts";
 import type { GitPort } from "../src/ports/git.ts";
 import type { FsPort } from "../src/ports/fs.ts";
 import type { PiResult } from "../src/domain/pi-result.ts";
+import { GateDeclinedError, type GatePort, type GateRequest } from "../src/ports/gate.ts";
 
 const PLAN = `## Stages
 
@@ -167,5 +168,46 @@ describe("runDiablo integration", () => {
     const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
     const out = await runDiablo(deps(agent, new FakeGit(), fs), config);
     expect(out.integration).toBeUndefined();
+  });
+});
+
+describe("runDiablo gate wiring", () => {
+  class FakeGate implements GatePort {
+    requests: GateRequest[] = [];
+    constructor(private decision: boolean) {}
+    confirm(request: GateRequest): Promise<boolean> {
+      this.requests.push(request);
+      return Promise.resolve(this.decision);
+    }
+  }
+
+  test("gate 'approval' consults the GatePort at the verifier (post-PASS)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const gate = new FakeGate(true);
+    await runDiablo({ agent, git: new FakeGit(), fs, gate }, { ...config, gate: "approval" });
+
+    // Exactly the verifier step is gated; design and worker run AFK.
+    expect(gate.requests.map((r) => r.tier)).toEqual(["verifier"]);
+    expect(gate.requests[0]!.stage).toBe("stage-1");
+  });
+
+  test("gate 'none' never consults the GatePort (fully AFK)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const gate = new FakeGate(false); // would decline if ever asked
+    const out = await runDiablo({ agent, git: new FakeGit(), fs, gate }, { ...config, gate: "none" });
+
+    expect(gate.requests).toHaveLength(0);
+    expect(out.commit).toBe("c".repeat(40));
+  });
+
+  test("declining the gate halts the run with GateDeclinedError", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    const gate = new FakeGate(false);
+    await expect(
+      runDiablo({ agent, git: new FakeGit(), fs, gate }, { ...config, gate: "approval" }),
+    ).rejects.toBeInstanceOf(GateDeclinedError);
   });
 });
