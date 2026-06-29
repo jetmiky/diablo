@@ -95,7 +95,8 @@ diablo 0.1.0 — a skill-driven Pi conductor
 Usage:
   diablo init            Scaffold diablo.config.json and set up skills
   diablo intake <feature> Gather requirements (grill → PRD → issues), interactive
-  diablo run <issue>     Run an issue's stages through the agent pipeline
+  diablo plan [issue]    Negotiate a plan with the planner, then freeze it
+  diablo run [issue]     Run an issue's stages through the agent pipeline
   diablo refactor <area> Refactor an area (same pipeline, refactor planner skill)
   diablo --version       Print the version
   diablo --help          Show this help
