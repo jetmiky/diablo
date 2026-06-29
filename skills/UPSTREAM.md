@@ -32,16 +32,18 @@ upstream skill — so no fork exists today.
 Only the skills diablo actually orchestrates are vendored (not unrelated Hermes
 skills):
 
-| Skill | Role in diablo |
-|-------|----------------|
-| `master-plan` | Planner (default `diablo run`) — frozen staged plan |
-| `tdd` | Worker — red-green-refactor implementation discipline |
-| `grill-with-docs` | Intake — Socratic requirement gathering |
-| `to-prd` | Intake — PRD authoring from gathered requirements |
-| `to-issues` | Intake — decompose a PRD into tracked issues |
-| `domain-modeling` | Intake/design — shared domain vocabulary |
-| `setup-matt-pocock-skills` | `diablo init` — project skill bootstrap |
-| `improve-codebase-architecture` | Planner for `diablo refactor` |
+| Skill                           | Role in diablo                                        |
+| ------------------------------- | ----------------------------------------------------- |
+| `master-plan`                   | Planner (default `diablo run`) — frozen staged plan   |
+| `tdd`                           | Worker — red-green-refactor implementation discipline |
+| `grilling`                      | Intake — Socratic requirement gathering               |
+| `grill-with-docs`               | Intake — Socratic requirement gathering               |
+| `to-prd`                        | Intake — PRD authoring from gathered requirements     |
+| `to-issues`                     | Intake — decompose a PRD into tracked issues          |
+| `codebase-design`               | Intake/design — shared domain vocabulary              |
+| `domain-modeling`               | Intake/design — shared domain vocabulary              |
+| `setup-matt-pocock-skills`      | `diablo init` — project skill bootstrap               |
+| `improve-codebase-architecture` | Planner for `diablo refactor`                         |
 
 ## Not vendored: `handoff` (handled natively)
 
