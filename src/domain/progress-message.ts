@@ -18,6 +18,8 @@ export function formatEvent(event: ProgressEvent): string {
       return `🔍 ${event.stage}: verifying`;
     case "committed":
       return `📌 ${event.stage}: committed \`${event.sha.slice(0, 7)}\``;
+    case "scope-warning":
+      return `⚠️ ${event.stage}: committed file(s) outside the declared scope — ${event.files.join(", ")}`;
     case "verdict":
       return event.verdict === "pass"
         ? `✅ ${event.stage}: VERDICT PASS`

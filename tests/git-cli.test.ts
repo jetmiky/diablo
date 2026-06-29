@@ -143,6 +143,34 @@ describe("GitCli", () => {
     );
   });
 
+  test("committedFiles lists the files a commit touched (diff-tree, handles root)", async () => {
+    const runner = new FakeRunner({ stdout: "src/a.ts\nsrc/b.ts\ntests/a.test.ts\n", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    const files = await git.committedFiles("/proj/.worktrees/billing-02", "abc123");
+
+    expect(files).toEqual(["src/a.ts", "src/b.ts", "tests/a.test.ts"]);
+    expect(runner.calls[0]!.command).toBe("git");
+    expect(runner.calls[0]!.args).toEqual(["diff-tree", "--no-commit-id", "--name-only", "-r", "abc123"]);
+    expect(runner.calls[0]!.cwd).toBe("/proj/.worktrees/billing-02");
+  });
+
+  test("committedFiles drops blank lines and trims", async () => {
+    const runner = new FakeRunner({ stdout: "  src/a.ts  \n\n\nsrc/b.ts\n", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    expect(await git.committedFiles("/proj/.worktrees/x", "sha")).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  test("committedFiles throws on non-zero exit", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "fatal: bad object", exitCode: 128 });
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.committedFiles("/proj/.worktrees/x", "sha")).rejects.toThrow(
+      /code 128.*bad object/s,
+    );
+  });
+
   test("worktreeAdd uses the configured branch name when given", async () => {
     const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
     const git = new GitCli("/proj", runner);

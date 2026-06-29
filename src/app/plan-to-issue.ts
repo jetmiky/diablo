@@ -147,6 +147,9 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
     tier: "worker",
     skills: config.skills.worker,
     inputs: [config.planPath, notePath],
+    // The union of the stage's tasks' declared Target Files — run-step scopes
+    // the worker commit against these and warns on strays (tests excepted).
+    targetFiles: [...new Set(stage.tasks.flatMap((t) => t.targetFiles))],
     instruction:
       `Implement stage ${stage.number} ("${stage.title}") from the plan: tasks ${taskIds}. ` +
       `Follow the plan's tasks and acceptance criteria, the design note for this stage (the ` +

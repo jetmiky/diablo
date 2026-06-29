@@ -18,6 +18,7 @@ import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 import type { RunSpec, Tier } from "../domain/run-spec.ts";
 import { parseVerdict } from "../domain/verdict.ts";
+import { outOfScopeFiles } from "../domain/commit-scope.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 
 /**
@@ -54,6 +55,13 @@ export interface Step {
    * the step produces no commit (e.g. a verifier that only reads state).
    */
   commitMessage?: string;
+  /**
+   * The task's declared Target Files for this step (worker steps only). After a
+   * commit, run-step compares the actually-committed files against these and
+   * emits a `scope-warning` for any stray (non-target, non-test) file. Warn,
+   * never block. Empty/omitted disables the check (nothing to scope against).
+   */
+  targetFiles?: string[];
   /**
    * The human checkpoint for this step, consulted AFTER the agent runs and
    * commits. "approval" asks the GatePort to confirm; "none" (or omitted) runs
@@ -180,6 +188,22 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
   } catch (err) {
     if (!(err instanceof NoChangesToCommitError)) throw err;
   }
+
+  // Scope check (warn, never block): if the commit touched files outside the
+  // task's declared Target Files (tests excepted), surface them so AFK scope
+  // creep is visible. Best-effort — a failure here must never break the step.
+  if (commit !== undefined && step.targetFiles && step.targetFiles.length > 0) {
+    try {
+      const committed = await deps.git.committedFiles(step.worktree, commit);
+      const strays = outOfScopeFiles(step.targetFiles, committed);
+      if (strays.length > 0) {
+        await deps.progress?.emit({ kind: "scope-warning", stage: step.stage, files: strays });
+      }
+    } catch {
+      // Scope reporting is advisory; never let it fail the step.
+    }
+  }
+
   await maybeGate(deps, step, result, commit);
   return commit === undefined ? result : { ...result, commit };
 }

@@ -106,6 +106,31 @@ export class GitCli implements GitPort, GitMergePort {
   }
 
   /**
+   * The file paths changed by a single commit. Uses `git diff-tree` with
+   * `-r` (recurse) and `--no-commit-id`, which lists a root commit's files
+   * correctly (unlike `diff <sha>^ <sha>`, which has no parent on the first
+   * commit). One path per line; blank lines dropped.
+   */
+  async committedFiles(worktree: string, sha: string): Promise<string[]> {
+    const outcome = await this.runner.run(
+      "git",
+      ["diff-tree", "--no-commit-id", "--name-only", "-r", sha],
+      worktree,
+    );
+
+    if (outcome.exitCode !== 0) {
+      throw new Error(
+        `git diff-tree failed with code ${outcome.exitCode}.\n${outcome.stderr.trim()}`,
+      );
+    }
+
+    return outcome.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  /**
    * Merge `branch` into `targetBranch` in the PRIMARY working copy (repoRoot,
    * not a worktree). Detect-and-halt: on conflict, collect the conflicting
    * files and `git merge --abort` so the tree is left clean — conflicts are

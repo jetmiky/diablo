@@ -16,6 +16,17 @@ export type ProgressEvent =
   | { kind: "verifier-running"; stage: string }
   | { kind: "committed"; stage: string; sha: string }
   | { kind: "verdict"; stage: string; verdict: "pass" | "fail" }
+  | {
+      /**
+       * Files a stage's worker commit touched that fall outside the task's
+       * declared Target Files (and are not tests). Surfaced, never blocking —
+       * an AFK run should flag scope creep without halting on it. `files` is
+       * non-empty when emitted.
+       */
+      kind: "scope-warning";
+      stage: string;
+      files: string[];
+    }
   | { kind: "handoff"; stage: string; note: string }
   | { kind: "stage-done"; stage: string; title: string }
   | { kind: "waiting-for-approval"; stage: string }

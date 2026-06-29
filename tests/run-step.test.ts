@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { runStep, VerificationFailedError, type RunStepDeps, type Step } from "../src/app/run-step.ts";
 import type { AgentPort } from "../src/ports/agent.ts";
 import { NoChangesToCommitError, type GitPort } from "../src/ports/git.ts";
+import type { ProgressEvent } from "../src/ports/progress.ts";
 import type { PiResult } from "../src/domain/pi-result.ts";
 import type { RunSpec } from "../src/domain/run-spec.ts";
 
@@ -38,6 +39,7 @@ class FakeAgent implements AgentPort {
 
 class FakeGit implements GitPort {
   commits: Array<{ worktree: string; message: string }> = [];
+  committed: string[] = [];
   worktreeAdd(): Promise<string> {
     throw new Error("not used");
   }
@@ -50,6 +52,9 @@ class FakeGit implements GitPort {
   }
   diffStat(): Promise<string> {
     return Promise.resolve("");
+  }
+  committedFiles(): Promise<string[]> {
+    return Promise.resolve(this.committed);
   }
 }
 
@@ -108,6 +113,7 @@ describe("runStep", () => {
       worktreeAdd: (i, b) => git.worktreeAdd(i, b),
       headSha: (w) => git.headSha(w),
       diffStat: (w, b) => git.diffStat(w, b),
+      committedFiles: (w, s) => git.committedFiles(w, s),
       commit: (w, m) => {
         order.push("commit");
         return git.commit(w, m);
@@ -141,6 +147,7 @@ describe("runStep", () => {
       commit: () => Promise.reject(new NoChangesToCommitError("/proj/.worktrees/billing-02")),
       headSha: () => Promise.resolve("a".repeat(40)),
       diffStat: () => Promise.resolve(""),
+      committedFiles: () => Promise.resolve([]),
     };
     const result = await runStep(deps(agent, noChangeGit), baseStep);
     expect(result.commit).toBeUndefined();
@@ -154,6 +161,7 @@ describe("runStep", () => {
       commit: () => Promise.reject(new Error("git index locked")),
       headSha: () => Promise.resolve("a".repeat(40)),
       diffStat: () => Promise.resolve(""),
+      committedFiles: () => Promise.resolve([]),
     };
     await expect(runStep(deps(agent, brokenGit), baseStep)).rejects.toThrow(/index locked/);
   });
@@ -199,6 +207,76 @@ describe("runStep verifier verdict", () => {
     const agent = new FakeAgent(fakeResult({ text: "implemented the feature" }));
     const result = await runStep(deps(agent, new FakeGit()), baseStep);
     expect(result.commit).toBe("a".repeat(40));
+  });
+});
+
+describe("runStep commit-scope warning", () => {
+  const scopedStep: Step = {
+    ...baseStep,
+    targetFiles: ["src/a.ts", "src/b.ts"],
+  };
+
+  function depsWithProgress(agent: AgentPort, git: GitPort, events: ProgressEvent[]): RunStepDeps {
+    return { agent, git, progress: { emit: (e) => { events.push(e); return Promise.resolve(); } } };
+  }
+
+  test("emits a scope-warning naming files committed outside the declared targets", async () => {
+    const git = new FakeGit();
+    git.committed = ["src/a.ts", "src/sneaky.ts"];
+    const events: ProgressEvent[] = [];
+    await runStep(depsWithProgress(new FakeAgent(fakeResult()), git, events), scopedStep);
+
+    const warn = events.find((e) => e.kind === "scope-warning");
+    expect(warn).toBeDefined();
+    expect((warn as { files: string[] }).files).toEqual(["src/sneaky.ts"]);
+  });
+
+  test("does NOT warn when every committed file is a declared target", async () => {
+    const git = new FakeGit();
+    git.committed = ["src/a.ts", "src/b.ts"];
+    const events: ProgressEvent[] = [];
+    await runStep(depsWithProgress(new FakeAgent(fakeResult()), git, events), scopedStep);
+
+    expect(events.find((e) => e.kind === "scope-warning")).toBeUndefined();
+  });
+
+  test("does NOT warn for committed test files (TDD pairing is in scope)", async () => {
+    const git = new FakeGit();
+    git.committed = ["src/a.ts", "tests/a.test.ts"];
+    const events: ProgressEvent[] = [];
+    await runStep(depsWithProgress(new FakeAgent(fakeResult()), git, events), scopedStep);
+
+    expect(events.find((e) => e.kind === "scope-warning")).toBeUndefined();
+  });
+
+  test("a step with no targetFiles never checks scope (committedFiles not called)", async () => {
+    let called = false;
+    const git = new FakeGit();
+    const tracking: GitPort = {
+      worktreeAdd: (i, b) => git.worktreeAdd(i, b),
+      commit: (w, m) => git.commit(w, m),
+      headSha: (w) => git.headSha(w),
+      diffStat: (w, b) => git.diffStat(w, b),
+      committedFiles: (w, s) => { called = true; return git.committedFiles(w, s); },
+    };
+    const events: ProgressEvent[] = [];
+    await runStep(depsWithProgress(new FakeAgent(fakeResult()), tracking, events), baseStep);
+
+    expect(called).toBe(false);
+    expect(events.find((e) => e.kind === "scope-warning")).toBeUndefined();
+  });
+
+  test("a failure reading committed files never breaks the step (advisory only)", async () => {
+    const git = new FakeGit();
+    const tracking: GitPort = {
+      worktreeAdd: (i, b) => git.worktreeAdd(i, b),
+      commit: (w, m) => git.commit(w, m),
+      headSha: (w) => git.headSha(w),
+      diffStat: (w, b) => git.diffStat(w, b),
+      committedFiles: () => Promise.reject(new Error("diff-tree blew up")),
+    };
+    const result = await runStep(deps(new FakeAgent(fakeResult()), tracking), scopedStep);
+    expect(result.commit).toBe("a".repeat(40)); // step still succeeds
   });
 });
 

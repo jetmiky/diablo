@@ -29,4 +29,6 @@ export interface GitPort {
   headSha(worktree: string): Promise<string>;
   /** Return `git diff --stat` output for the worktree against baseBranch. */
   diffStat(worktree: string, baseBranch: string): Promise<string>;
+  /** Return the file paths changed by a single commit (handles root commits). */
+  committedFiles(worktree: string, sha: string): Promise<string[]>;
 }
