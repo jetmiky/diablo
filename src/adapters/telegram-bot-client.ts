@@ -14,21 +14,45 @@ export class TelegramBotClient implements TelegramClient {
     private readonly chatId: string,
   ) {}
 
-  async sendMessage(text: string, parseMode: string): Promise<void> {
-    const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
+  async sendMessage(text: string, parseMode: string): Promise<{ messageId: number }> {
+    const result = await this.callApi<{ message_id: number }>("sendMessage", {
+      chat_id: this.chatId,
+      text,
+      parse_mode: parseMode,
+      disable_web_page_preview: true,
+    });
+    return { messageId: result.message_id };
+  }
+
+  async editMessageText(messageId: number, text: string, parseMode: string): Promise<void> {
+    await this.callApi<unknown>("editMessageText", {
+      chat_id: this.chatId,
+      message_id: messageId,
+      text,
+      parse_mode: parseMode,
+      disable_web_page_preview: true,
+    });
+  }
+
+  /**
+   * POST a Bot API method with a JSON body, returning its `result`. A non-2xx
+   * response throws so the fan-out sink can swallow it (progress is best-effort)
+   * while a real misconfiguration is still surfaced in logs during development.
+   */
+  private async callApi<T>(method: string, body: Record<string, unknown>): Promise<T> {
+    const url = `https://api.telegram.org/bot${this.botToken}/${method}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: this.chatId,
-        text,
-        parse_mode: parseMode,
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`Telegram sendMessage failed: ${res.status} ${res.statusText} ${body}`.trim());
+      const errBody = await res.text().catch(() => "");
+      throw new Error(
+        `Telegram ${method} failed: ${res.status} ${res.statusText} ${errBody}`.trim(),
+      );
     }
+    const json = (await res.json().catch(() => ({}))) as { result?: T };
+    return json.result as T;
   }
 }

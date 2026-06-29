@@ -26,6 +26,12 @@ export function formatEvent(event: ProgressEvent): string {
       return `📝 ${event.stage}: ${event.note}`;
     case "retry":
       return `🔁 ${event.stage}: retry attempt ${event.attempt}`;
+    case "heartbeat": {
+      const elapsed = formatDuration(event.elapsedMs);
+      return event.activity
+        ? `⏳ ${event.stage}: ${event.activity} · ${elapsed} elapsed`
+        : `⏳ ${event.stage}: working · ${elapsed} elapsed`;
+    }
     case "stage-done":
       return `🏁 stage **${event.title}** (${event.stage}) done`;
     case "waiting-for-approval":
@@ -37,4 +43,21 @@ export function formatEvent(event: ProgressEvent): string {
     case "halted":
       return `🛑 run halted — ${event.reason}`;
   }
+}
+
+/**
+ * Formats a millisecond duration as a compact human string: "45s", "2m5s",
+ * "1h3m". Seconds are dropped once past an hour (minute resolution is enough
+ * for a long run). Used by the heartbeat line so the user sees how long the
+ * current step has been running.
+ */
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h${minutes}m`;
+  if (minutes > 0) return `${minutes}m${seconds}s`;
+  return `${seconds}s`;
 }

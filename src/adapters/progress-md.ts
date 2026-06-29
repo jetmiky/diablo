@@ -21,6 +21,10 @@ export class ProgressMdAdapter implements ProgressPort {
   }
 
   async emit(event: ProgressEvent): Promise<void> {
+    // Heartbeats are a transient liveness signal, not structural state. The
+    // tracker is the durable "where is the run?" document; rewriting it on
+    // every ~1s tick would be pure disk churn for no content change. Skip them.
+    if (event.kind === "heartbeat") return;
     this.tracker.apply(event);
     await this.fs.write(this.path, this.tracker.render());
   }

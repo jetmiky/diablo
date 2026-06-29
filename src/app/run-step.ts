@@ -76,6 +76,22 @@ export interface RunStepDeps {
   gate?: GatePort;
   /** Optional progress sink; when present, the run loop emits structured events to it. */
   progress?: ProgressPort;
+  /**
+   * Optional liveness-ticker factory. When present, runStep builds a heartbeat
+   * around the (long, otherwise-silent) agent call: it is started before the
+   * run and stopped after — even on failure. Each tick forwards the elapsed
+   * time as a `heartbeat` progress event for this step's stage, so a surface
+   * can show the run is alive without the agent emitting anything itself. The
+   * factory receives the per-tick callback and returns a start/stop handle, so
+   * the timer is injected and the wiring is unit-tested without a real clock.
+   */
+  heartbeat?: (onTick: (elapsedMs: number) => void) => HeartbeatHandle;
+}
+
+/** A started/stoppable liveness ticker handle (see RunStepDeps.heartbeat). */
+export interface HeartbeatHandle {
+  start(): void;
+  stop(): void;
 }
 
 export interface StepResult extends PiResult {
@@ -95,8 +111,35 @@ function specOf(step: Step): RunSpec {
   };
 }
 
+/**
+ * Runs the agent for a step, bracketing it with the optional liveness heartbeat.
+ * The ticker is started before the (long, silent) agent call and stopped in a
+ * finally so it never outlives the call — even when the run throws. Each tick
+ * is forwarded as a `heartbeat` progress event for the step's stage; emit
+ * failures are swallowed so liveness never breaks the run. With no heartbeat
+ * factory (the default), this is just `agent.run`.
+ */
+async function runAgentWithHeartbeat(deps: RunStepDeps, step: Step): Promise<PiResult> {
+  if (!deps.heartbeat) return deps.agent.run(specOf(step));
+
+  const beat = deps.heartbeat((elapsedMs) => {
+    void deps.progress
+      ?.emit({ kind: "heartbeat", stage: step.stage, elapsedMs })
+      .catch(() => {
+        // Liveness is best-effort; a failed tick must never break the step.
+      });
+  });
+
+  beat.start();
+  try {
+    return await deps.agent.run(specOf(step));
+  } finally {
+    beat.stop();
+  }
+}
+
 export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult> {
-  const result = await deps.agent.run(specOf(step));
+  const result = await runAgentWithHeartbeat(deps, step);
 
   // Never commit work from a run that ended in error.
   if (result.stopReason === "error") {

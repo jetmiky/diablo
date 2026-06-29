@@ -17,6 +17,7 @@ import { integrate, type IntegrateResult } from "./integrate.ts";
 import { branchName } from "../domain/branch.ts";
 import type { GatePort } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
+import type { RunStepDeps } from "./run-step.ts";
 
 export interface IntegrationConfig {
   targetBranch: string;
@@ -41,6 +42,8 @@ export interface RunDiabloDeps {
   merge?: GitMergePort;
   /** Optional progress sink; structured run events are emitted to it when present. */
   progress?: ProgressPort;
+  /** Optional liveness-ticker factory; bracketed around each agent run (see RunStepDeps). */
+  heartbeat?: RunStepDeps["heartbeat"];
 }
 
 export interface RunDiabloResult extends IssueResult {
@@ -63,7 +66,7 @@ export async function runDiablo(
   const issue = await loadIssue(deps, config);
 
   const result = await runIssue(
-    { agent: deps.agent, git: deps.git, gate: deps.gate, progress: deps.progress },
+    { agent: deps.agent, git: deps.git, gate: deps.gate, progress: deps.progress, heartbeat: deps.heartbeat },
     issue,
     config.retry ?? { limit: 0 },
   );

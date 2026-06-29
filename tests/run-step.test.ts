@@ -201,3 +201,94 @@ describe("runStep verifier verdict", () => {
     expect(result.commit).toBe("a".repeat(40));
   });
 });
+
+describe("runStep heartbeat wiring", () => {
+  // A controllable heartbeat: records start/stop and lets the test fire a tick
+  // by hand, so we assert the ticker brackets the in-flight agent call without
+  // any real timer.
+  class FakeHeartbeat {
+    started = false;
+    stopped = false;
+    private onTick?: (elapsedMs: number) => void;
+    constructor(onTick: (elapsedMs: number) => void) {
+      this.onTick = onTick;
+    }
+    start(): void {
+      this.started = true;
+    }
+    stop(): void {
+      this.stopped = true;
+    }
+    tick(elapsedMs: number): void {
+      this.onTick?.(elapsedMs);
+    }
+  }
+
+  test("starts a heartbeat before the agent runs and stops it after", async () => {
+    const order: string[] = [];
+    let beat: FakeHeartbeat | undefined;
+    const agent = new FakeAgent(() => {
+      order.push("agent");
+      return Promise.resolve(fakeResult());
+    });
+    const d: RunStepDeps = {
+      agent,
+      git: new FakeGit(),
+      heartbeat: (onTick) => {
+        beat = new FakeHeartbeat(onTick);
+        const original = beat.start.bind(beat);
+        beat.start = () => {
+          order.push("start");
+          original();
+        };
+        const originalStop = beat.stop.bind(beat);
+        beat.stop = () => {
+          order.push("stop");
+          originalStop();
+        };
+        return beat;
+      },
+    };
+
+    await runStep(d, baseStep);
+
+    expect(order).toEqual(["start", "agent", "stop"]);
+    expect(beat!.started).toBe(true);
+    expect(beat!.stopped).toBe(true);
+  });
+
+  test("a heartbeat tick emits a heartbeat progress event for the step's stage", async () => {
+    const events: Array<{ kind: string; stage?: string; elapsedMs?: number }> = [];
+    let beat: FakeHeartbeat | undefined;
+    const agent = new FakeAgent(async () => {
+      beat!.tick(42_000); // a tick arrives while the agent is in flight
+      return fakeResult();
+    });
+    const d: RunStepDeps = {
+      agent,
+      git: new FakeGit(),
+      progress: { emit: (e) => { events.push(e); return Promise.resolve(); } },
+      heartbeat: (onTick) => (beat = new FakeHeartbeat(onTick)),
+    };
+
+    await runStep(d, baseStep);
+
+    const hb = events.find((e) => e.kind === "heartbeat");
+    expect(hb).toBeDefined();
+    expect(hb!.stage).toBe("stage-1");
+    expect(hb!.elapsedMs).toBe(42_000);
+  });
+
+  test("stops the heartbeat even when the agent run fails", async () => {
+    let beat: FakeHeartbeat | undefined;
+    const agent = new FakeAgent(() => Promise.reject(new Error("pi exited with code 1")));
+    const d: RunStepDeps = {
+      agent,
+      git: new FakeGit(),
+      heartbeat: (onTick) => (beat = new FakeHeartbeat(onTick)),
+    };
+
+    await expect(runStep(d, baseStep)).rejects.toThrow(/code 1/);
+    expect(beat!.stopped).toBe(true);
+  });
+});

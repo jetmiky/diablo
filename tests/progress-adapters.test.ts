@@ -53,6 +53,29 @@ describe("ProgressMdAdapter", () => {
     await adapter.emit({ kind: "stage-done", stage: "stage-1", title: "Scaffold" });
     expect(fs.files.get(NOTE_PATH)!).toContain("Deferred CI.");
   });
+
+  test("ignores heartbeat ticks — the tracker is structural, not a liveness sink", async () => {
+    const fs = new FakeFs();
+    let writes = 0;
+    const counting: FsPort = {
+      read: (p) => fs.read(p),
+      exists: (p) => fs.exists(p),
+      write: (p, c) => {
+        writes += 1;
+        return fs.write(p, c);
+      },
+    };
+    const adapter = new ProgressMdAdapter(counting, NOTE_PATH, "roast-cli");
+    await adapter.emit({ kind: "stage-started", stage: "stage-1", title: "Scaffold", index: 1, total: 1 });
+    const afterStart = writes;
+
+    // A burst of heartbeats must NOT rewrite the file (no disk churn per tick).
+    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 1_000 });
+    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 2_000 });
+    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 3_000 });
+
+    expect(writes).toBe(afterStart); // no extra writes from heartbeats
+  });
 });
 
 describe("FanOutProgress", () => {

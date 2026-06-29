@@ -29,6 +29,7 @@ import { ProgressMdAdapter } from "../adapters/progress-md.ts";
 import { TelegramProgress } from "../adapters/telegram-progress.ts";
 import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
 import { FanOutProgress } from "../adapters/fan-out-progress.ts";
+import { Heartbeat } from "../domain/heartbeat.ts";
 import { GateDeclinedError, type GateMode } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
@@ -128,6 +129,9 @@ function buildDeps(
     fs: new NodeFs(),
     gate: new StdinGate(),
     progress,
+    // A fresh liveness ticker per step: ticks every second so stdout animates a
+    // spinner; the Telegram sink throttles those ticks to its own 15s window.
+    heartbeat: (onTick) => new Heartbeat({ emit: onTick }),
   };
 }
 

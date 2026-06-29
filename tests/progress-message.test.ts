@@ -39,4 +39,21 @@ describe("formatEvent", () => {
   test("retry shows the attempt number", () => {
     expect(formatEvent({ kind: "retry", stage: "stage-1", attempt: 2 })).toContain("2");
   });
+
+  test("heartbeat shows elapsed time in a human-readable form", () => {
+    const msg = formatEvent({ kind: "heartbeat", stage: "stage-1", elapsedMs: 125_000 });
+    // 125s → 2m5s; the exact glyph is the sink's business, but the elapsed
+    // duration must be present so the user sees the run is alive and how long.
+    expect(msg).toMatch(/2m\s*5s/);
+  });
+
+  test("heartbeat includes the current activity when one is known", () => {
+    const msg = formatEvent({
+      kind: "heartbeat",
+      stage: "stage-1",
+      elapsedMs: 5_000,
+      activity: "implementing",
+    });
+    expect(msg).toContain("implementing");
+  });
 });

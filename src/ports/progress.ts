@@ -20,6 +20,21 @@ export type ProgressEvent =
   | { kind: "stage-done"; stage: string; title: string }
   | { kind: "waiting-for-approval"; stage: string }
   | { kind: "retry"; stage: string; attempt: number }
+  | {
+      /**
+       * A liveness tick emitted at a steady cadence WHILE a step is in flight,
+       * so a surface can show the run is alive (and for how long) during the
+       * long silent gap inside a single agent run. `elapsedMs` is the time the
+       * current step has been running; `activity`, when known, is a short label
+       * of what the agent is doing (filled once Pi's stream is parsed — absent
+       * for now). Distinct from the discrete lifecycle events: heartbeats are
+       * coalesced/throttled per-sink and never written to the structural tracker.
+       */
+      kind: "heartbeat";
+      stage: string;
+      elapsedMs: number;
+      activity?: string;
+    }
   | { kind: "done"; commit?: string }
   | { kind: "halted"; reason: string };
 
