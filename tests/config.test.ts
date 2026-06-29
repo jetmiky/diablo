@@ -85,6 +85,23 @@ describe("parseConfig", () => {
     expect(() => parseConfig('{ "limits": { "maxSteps": 0 } }')).toThrow(/maxSteps/i);
   });
 
+  test("defaults verify.commands to empty (no deterministic gate until configured)", () => {
+    expect(parseConfig("{}").verify.commands).toEqual([]);
+  });
+
+  test("reads verify.commands as a list of gate commands", () => {
+    const cfg = parseConfig('{ "verify": { "commands": ["bun run typecheck", "bun test"] } }');
+    expect(cfg.verify.commands).toEqual(["bun run typecheck", "bun test"]);
+  });
+
+  test("rejects a non-array verify.commands", () => {
+    expect(() => parseConfig('{ "verify": { "commands": "bun test" } }')).toThrow(/verify\.commands/i);
+  });
+
+  test("rejects non-string entries in verify.commands", () => {
+    expect(() => parseConfig('{ "verify": { "commands": ["bun test", 42] } }')).toThrow(/verify\.commands/i);
+  });
+
   test("throws a clear error on malformed JSON", () => {
     expect(() => parseConfig("{ not json")).toThrow(/config.*json|parse|invalid/i);
   });

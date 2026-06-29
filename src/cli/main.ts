@@ -32,6 +32,7 @@ import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
 import { FanOutProgress } from "../adapters/fan-out-progress.ts";
 import { Heartbeat } from "../domain/heartbeat.ts";
 import { RunBudget } from "../domain/run-budget.ts";
+import { CommandVerifyGate } from "../adapters/command-verify-gate.ts";
 import {
   parseTelegramCredentialsFile,
   resolveTelegramCredentials,
@@ -131,6 +132,7 @@ function buildDeps(
   runId: string,
   progress: RunDiabloDeps["progress"],
   limits: ConfigLimits,
+  verifyCommands: readonly string[],
 ): RunDiabloDeps {
   const runner = new NodeProcessRunner();
   const piBinary = resolvePiBinary(process.env);
@@ -160,6 +162,11 @@ function buildDeps(
     },
     // One budget per run (wall-clock + step count); checked before each step.
     budget: new RunBudget(limits),
+    // Engine-owned deterministic gate (ADR 0001): runs the configured commands
+    // in the worktree so a verifying step's verdict is MEASURED, not just the
+    // LLM's self-report. Empty commands → undefined → LLM-verdict-only.
+    verifyGate:
+      verifyCommands.length > 0 ? new CommandVerifyGate(verifyCommands, runner) : undefined,
   };
 }
 
@@ -538,7 +545,18 @@ async function executeRun(
 
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
   const progress = buildProgress(progressPath, target, repoRoot);
-  const deps = buildDeps(repoRoot, overrides, runId, progress, config.limits);
+  const deps = buildDeps(repoRoot, overrides, runId, progress, config.limits, config.verify.commands);
+
+  // Loud degrade (ADR 0001): with no configured gate commands, a verifying
+  // step's verdict is the LLM's self-report alone — not a measured fact. Say so
+  // rather than letting the user assume the run is deterministically gated.
+  if (config.verify.commands.length === 0) {
+    process.stdout.write(
+      `\n⚠️  No verify.commands configured — verification is LLM-verdict-only (not measured).\n` +
+        `   Add e.g. \"verify\": { \"commands\": ["bun run typecheck", "bun test"] } to diablo.config.json\n` +
+        `   so diablo runs the gates itself and a green verdict can't override a real failure.\n\n`,
+    );
+  }
 
   await writeStatus({ fs }, { diabloDir, issue: target, status: "in-progress" });
 

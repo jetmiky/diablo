@@ -376,6 +376,74 @@ describe("runStep run budget", () => {
   });
 });
 
+describe("runStep measured verification gate", () => {
+  const verifierStep: Step = { ...baseStep, tier: "verifier", commitMessage: undefined };
+
+  // A verifyGate fake that returns canned gate outcomes for the worktree.
+  function gateReturning(outcomes: Array<{ command: string; exitCode: number }>) {
+    const calls: string[] = [];
+    return {
+      run: (worktree: string) => { calls.push(worktree); return Promise.resolve(outcomes); },
+      calls,
+    };
+  }
+
+  test("LLM PASS + a failing gate → VerificationFailedError (measured exit overrides the verdict)", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "all green\nVERDICT: PASS" }));
+    const verifyGate = gateReturning([{ command: "bun test", exitCode: 1 }]);
+    await expect(
+      runStep({ agent, git: new FakeGit(), verifyGate }, verifierStep),
+    ).rejects.toBeInstanceOf(VerificationFailedError);
+    expect(verifyGate.calls).toEqual(["/proj/.worktrees/billing-02"]); // ran in the worktree
+  });
+
+  test("LLM PASS + all gates pass → completes", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "VERDICT: PASS" }));
+    const verifyGate = gateReturning([{ command: "bun test", exitCode: 0 }]);
+    const result = await runStep({ agent, git: new FakeGit(), verifyGate }, verifierStep);
+    expect(result.text).toContain("VERDICT: PASS");
+  });
+
+  test("the measured failure error names the failing command and is retryable (implementation)", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "VERDICT: PASS" }));
+    const verifyGate = gateReturning([{ command: "bun run typecheck", exitCode: 2 }]);
+    try {
+      await runStep({ agent, git: new FakeGit(), verifyGate }, verifierStep);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VerificationFailedError);
+      expect((err as VerificationFailedError).category).toBe("implementation");
+      expect((err as VerificationFailedError).message).toMatch(/typecheck/);
+    }
+  });
+
+  test("LLM FAIL [plan] + passing gates → fails AND preserves the plan category (halts to human)", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "the plan is wrong\nVERDICT: FAIL [plan]" }));
+    const verifyGate = gateReturning([{ command: "bun test", exitCode: 0 }]);
+    try {
+      await runStep({ agent, git: new FakeGit(), verifyGate }, verifierStep);
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(VerificationFailedError);
+      expect((err as VerificationFailedError).category).toBe("plan");
+    }
+  });
+
+  test("no verifyGate seam → falls back to the LLM verdict alone (back-compat)", async () => {
+    const agent = new FakeAgent(fakeResult({ text: "VERDICT: PASS" }));
+    const result = await runStep({ agent, git: new FakeGit() }, verifierStep);
+    expect(result.text).toContain("VERDICT: PASS");
+  });
+
+  test("the gate is NOT run for a non-verifying step (a plain worker)", async () => {
+    const verifyGate = gateReturning([{ command: "bun test", exitCode: 1 }]);
+    // baseStep is a worker (does not verify); a failing gate must not affect it.
+    const result = await runStep({ agent: new FakeAgent(fakeResult()), git: new FakeGit(), verifyGate }, baseStep);
+    expect(result.commit).toBe("a".repeat(40));
+    expect(verifyGate.calls).toEqual([]); // never consulted for a non-verifier
+  });
+});
+
 describe("runStep heartbeat wiring", () => {
   // A controllable heartbeat: records start/stop and lets the test fire a tick
   // by hand, so we assert the ticker brackets the in-flight agent call without

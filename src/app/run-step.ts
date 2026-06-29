@@ -17,7 +17,8 @@ import type { GateMode, GatePort } from "../ports/gate.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 import type { RunSpec, Tier } from "../domain/run-spec.ts";
-import { parseVerdict } from "../domain/verdict.ts";
+import { parseVerdict, parseVerdictCategory, type VerdictCategory } from "../domain/verdict.ts";
+import { combineVerdict, type GateOutcome } from "../domain/measured-verdict.ts";
 import { outOfScopeFiles } from "../domain/commit-scope.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 
@@ -32,6 +33,13 @@ export class VerificationFailedError extends Error {
     readonly issue: string,
     readonly stage: string,
     readonly verdictText: string,
+    /**
+     * The routing category for this failure (run-stage reads it): "implementation"
+     * → the worker can retry with feedback (bounded); "plan" → halt to a human.
+     * A measured gate failure is always "implementation"; an LLM FAIL preserves
+     * the verifier's declared category.
+     */
+    readonly category: VerdictCategory = "implementation",
   ) {
     super(
       `Verification failed for ${issue}/${stage}: the verifier did not return ` +
@@ -125,6 +133,19 @@ export interface RunStepDeps {
    * agent never runs, so a runaway run is stopped at the next step boundary.
    */
   budget?: BudgetGate;
+  /**
+   * Optional engine-owned verification gate (ADR 0001). When present, a
+   * VERIFYING step runs the configured gate commands in the worktree and the
+   * MEASURED exit codes are combined with the LLM verdict — a non-zero exit
+   * fails the stage regardless of the verdict. Absent, the step falls back to
+   * the LLM verdict alone (and the caller should warn the run is verdict-only).
+   */
+  verifyGate?: VerifyGate;
+}
+
+/** Runs the project's deterministic gate commands in a worktree (ADR 0001). */
+export interface VerifyGate {
+  run(worktree: string): Promise<GateOutcome[]>;
 }
 
 /** A started/stoppable per-step deadline handle (see RunStepDeps.deadline). */
@@ -248,12 +269,20 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
   }
 
   // A step that verifies (any verifier-tier step, or one explicitly marked
-  // verifies:true such as a planner-tier final verification) must end with a
-  // passing VERDICT line. A FAIL — or no verdict line at all (silence is not
-  // success) — halts the pipeline fail-fast.
+  // verifies:true such as a planner-tier final verification) must pass the gate.
+  // The gate fuses the LLM verdict with diablo's engine-owned MEASURED gate
+  // commands (ADR 0001): a non-zero gate exit fails the stage regardless of the
+  // LLM's self-report. Absent a verifyGate seam, this is the LLM verdict alone.
   const enforcesVerdict = step.verifies ?? step.tier === "verifier";
-  if (enforcesVerdict && parseVerdict(result.text) !== "pass") {
-    throw new VerificationFailedError(step.issue, step.stage, result.text);
+  if (enforcesVerdict) {
+    const llmVerdict = parseVerdict(result.text);
+    const llmCategory = parseVerdictCategory(result.text);
+    const gates = deps.verifyGate ? await deps.verifyGate.run(step.worktree) : [];
+    const decision = combineVerdict(llmVerdict, llmCategory, gates);
+    if (decision.verdict !== "pass") {
+      const detail = decision.reason ? `${decision.reason}\n${result.text}` : result.text;
+      throw new VerificationFailedError(step.issue, step.stage, detail, decision.category);
+    }
   }
 
   if (step.commitMessage === undefined) {

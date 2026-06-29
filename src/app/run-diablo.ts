@@ -49,6 +49,8 @@ export interface RunDiabloDeps {
   deadline?: RunStepDeps["deadline"];
   /** Optional global run-budget gate; checked before each step (wall-clock + step count). */
   budget?: RunStepDeps["budget"];
+  /** Optional engine-owned verification gate; measured gate commands per verifying step. */
+  verifyGate?: RunStepDeps["verifyGate"];
 }
 
 export interface RunDiabloResult extends IssueResult {
@@ -86,6 +88,7 @@ export async function runDiablo(
       heartbeat: deps.heartbeat,
       deadline: deps.deadline,
       budget: deps.budget,
+      verifyGate: deps.verifyGate,
     },
     issue,
     config.retry ?? { limit: 0 },

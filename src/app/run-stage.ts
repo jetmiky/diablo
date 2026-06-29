@@ -21,7 +21,6 @@ import {
   type Step,
   type StepResult,
 } from "./run-step.ts";
-import { parseVerdictCategory } from "../domain/verdict.ts";
 import type { ProgressEvent } from "../ports/progress.ts";
 
 export interface Stage {
@@ -97,7 +96,7 @@ export async function runStage(
         if (!(err instanceof VerificationFailedError)) throw err;
         await emit({ kind: "verdict", stage: stage.stage, verdict: "fail" });
 
-        const category = parseVerdictCategory(err.verdictText);
+        const category = err.category;
         // A plan defect, an exhausted budget, or nothing to re-run → halt.
         if (category === "plan" || attempt >= retry.limit || !workerStep) throw err;
 

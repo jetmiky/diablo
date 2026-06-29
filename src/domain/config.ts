@@ -43,12 +43,25 @@ export interface ConfigLimits {
   maxSteps: number;
 }
 
+/**
+ * The deterministic verification gate diablo runs itself after a committing
+ * step (ADR 0001). Each command is run in the worktree; a non-zero exit makes
+ * the stage FAIL regardless of the verifier LLM's verdict. Empty by default —
+ * a project with no commands runs LLM-verdict-only, and diablo says so loudly
+ * rather than pretending the verdict is authoritative.
+ */
+export interface ConfigVerify {
+  /** Shell gate commands (e.g. "bun run typecheck", "bun test"), run in order. */
+  commands: string[];
+}
+
 export interface DiabloConfig {
   models: ConfigModels;
   integration: ConfigIntegration;
   gate: GateMode;
   retry: ConfigRetry;
   limits: ConfigLimits;
+  verify: ConfigVerify;
   /** Optional override for the vendored skills directory; resolver decides when absent. */
   skillsDir?: string;
 }
@@ -82,6 +95,7 @@ export function defaultConfig(): DiabloConfig {
       runBudgetMs: 4 * 60 * 60 * 1000, // 4 h — a whole-run wall-clock ceiling
       maxSteps: 200, // step-count circuit breaker
     },
+    verify: { commands: [] }, // no deterministic gate until the project configures one
   };
 }
 
@@ -113,9 +127,10 @@ export function parseConfig(text: string): DiabloConfig {
   const integration = mergeIntegration(base.integration, obj.integration);
   const retry = mergeRetry(base.retry, obj.retry);
   const limits = mergeLimits(base.limits, obj.limits);
+  const verify = mergeVerify(base.verify, obj.verify);
   const gate = parseGate(obj.gate, base.gate);
 
-  const config: DiabloConfig = { models, integration, gate, retry, limits };
+  const config: DiabloConfig = { models, integration, gate, retry, limits, verify };
   if (typeof obj.skillsDir === "string") config.skillsDir = obj.skillsDir;
   return config;
 }
@@ -192,6 +207,22 @@ function positiveInt(value: unknown, fallback: number, name: string): number {
     throw new Error(`Invalid diablo config: '${name}' must be a positive integer.`);
   }
   return value;
+}
+
+function mergeVerify(base: ConfigVerify, raw: unknown): ConfigVerify {
+  if (raw === undefined) return base;
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("Invalid diablo config: 'verify' must be an object.");
+  }
+  const v = raw as Record<string, unknown>;
+  if (v.commands === undefined) return base;
+  if (
+    !Array.isArray(v.commands) ||
+    v.commands.some((c) => typeof c !== "string")
+  ) {
+    throw new Error("Invalid diablo config: 'verify.commands' must be an array of strings.");
+  }
+  return { commands: v.commands as string[] };
 }
 
 function parseGate(raw: unknown, fallback: GateMode): GateMode {
