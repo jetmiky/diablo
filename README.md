@@ -361,20 +361,45 @@ flow back through `to-issues` → `diablo run`. Same engine, looped.
 
 A run emits structured progress events through a `ProgressPort` to three sinks:
 
-- **stdout** — a one-line status per event (always on).
+- **stdout** — a one-line status per discrete event (always on). While a step is
+  in flight, an animated braille spinner with an elapsed timer is redrawn in
+  place (carriage return, no newline), so a long step never looks hung.
 - **`progress.md`** — a LIVE tracker in the worktree's `.plans/`, updated every
-  event with per-stage status (TODO/IN_PROGRESS/DONE/HALTED), commit SHA,
-  verdict, retries, and a Pending Todos list. Each stage's **handoff note**
+  discrete event with per-stage status (TODO/IN_PROGRESS/DONE/HALTED), commit
+  SHA, verdict, retries, and a Pending Todos list. Each stage's **handoff note**
   (the worker's carry-forward narrative: decisions, deferrals, gotchas) is
-  folded into the same artifact — one file, no drift.
+  folded into the same artifact — one file, no drift. Liveness heartbeats are
+  ignored here (the tracker is structural, not a per-second sink).
 - **Telegram** — push notifications rendered as Telegram-HTML (the supported
   `<b>/<i>/<code>/<pre>/<a>` subset, escaped for path/SHA/code-heavy content).
-  Enabled only when `DIABLO_TELEGRAM_BOT_TOKEN` and `DIABLO_TELEGRAM_CHAT_ID`
-  are set in the environment; no credentials are read from config or committed.
+  Liveness is shown as a single live bubble edited in place and throttled to one
+  edit per 15s (respecting the Bot API edit rate limit); a discrete event closes
+  the bubble so the next heartbeat opens a fresh one. Enabled only when
+  `DIABLO_TELEGRAM_BOT_TOKEN` and `DIABLO_TELEGRAM_CHAT_ID` are set in the
+  environment; no credentials are read from config or committed.
 
-Sinks are best-effort: a failing sink (e.g. Telegram down) never halts a run.
-Idle-vs-working is derived from the event stream (`waiting-for-approval` = idle).
-Two-way interactive approval over Telegram is out of scope (deferred).
+### Liveness
+
+Long agent steps are otherwise silent for minutes. A **heartbeat** ticks while
+each step runs, so every surface can show the run is alive and for how long.
+Diablo streams Pi's `--mode json` stdout line by line and surfaces each
+`tool_execution_start` as a short activity label, so the heartbeat reflects what
+the agent is doing right now (for example `editing run-step.ts`, ``running `bun
+test` ``, or `searching for "TODO"`) instead of a bare `working`. The label
+falls back to the bare tool name for tools it doesn't recognise, and to
+`working` before the first tool starts.
+
+Liveness is push-only and best-effort: a failing sink (e.g. Telegram down) never
+halts a run, and the activity stream is parsed defensively (a malformed line is
+ignored, never thrown). Idle-vs-working is derived from the event stream
+(`waiting-for-approval` = idle).
+
+Two-way interactive approval over Telegram is intentionally **not** built:
+unattended runs use `gate: none` (the verifier is the automated checkpoint), and
+interactive runs already approve over stdin (`gate: approval`) from the terminal.
+A Telegram approval gate would sit only in the narrow "AFK but still approving
+by hand" gap, at the cost of an inbound poller, pairing/security, and
+timeout/stale-tap handling — not worth it for that slice.
 
 ## Develop
 

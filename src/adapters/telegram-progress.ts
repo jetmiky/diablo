@@ -15,9 +15,11 @@
  * That keeps the live timer attached to the current activity and prevents a
  * stale bubble from ticking after the step it described has moved on.
  *
- * Read-only push notifications — two-way approval over Telegram is out of scope
- * here (handled by a separate gate). All sends are best-effort by virtue of the
- * fan-out sink swallowing errors; this adapter focuses on WHAT to render.
+ * Read-only push notifications by design: approval stays on stdin (interactive
+ * runs) or off entirely (unattended runs use gate: none, with the verifier as
+ * the automated checkpoint), so there is no inbound Telegram channel to build.
+ * All sends are best-effort by virtue of the fan-out sink swallowing errors;
+ * this adapter focuses on WHAT to render.
  */
 import type { ProgressEvent, ProgressPort } from "../ports/progress.ts";
 import type { TelegramClient } from "../ports/telegram-client.ts";
