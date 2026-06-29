@@ -50,12 +50,13 @@ class FakePrompt implements PromptPort {
 
 const CONFIG_PATH = "/proj/diablo.config.json";
 
-function makeDeps(fs: FsPort, prompt: PromptPort) {
+function makeDeps(fs: FsPort, prompt: PromptPort, hasCommits = false) {
   const calls: string[] = [];
   const installed: PackageManager[] = [];
   const deps: InitDeps = {
     fs,
     prompt,
+    hasCommits: async () => hasCommits,
     setupSkills: async () => {
       calls.push("setup-skills");
     },
@@ -69,6 +70,8 @@ function makeDeps(fs: FsPort, prompt: PromptPort) {
   };
   return { deps, calls, installed };
 }
+
+const GITIGNORE_PATH = "/proj/.gitignore";
 
 describe("initDiablo", () => {
   test("scaffolds a diablo.config.json with built-in defaults when none exists", async () => {
@@ -144,8 +147,65 @@ describe("initDiablo", () => {
   test("git init runs independent of which package manager is chosen", async () => {
     for (const pm of ["bun", "npm", "pnpm", "skip"]) {
       const { deps, calls } = makeDeps(new FakeFs(), new FakePrompt(true, pm));
-      await initDiablo(deps, { configPath: CONFIG_PATH });
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
       expect(calls).toContain("git-init");
     }
+  });
+
+  describe("gitignore scaffolding", () => {
+    test("writes a .gitignore with diablo runtime dirs, even when bootstrap is declined", async () => {
+      const fs = new FakeFs();
+      const { deps } = makeDeps(fs, new FakePrompt(false));
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+
+      const content = fs.files.get(GITIGNORE_PATH);
+      expect(content).toBeDefined();
+      expect(content!).toContain(".diablo/");
+      expect(content!).toContain(".worktrees/");
+    });
+
+    test("greenfield (no commits) seeds node_modules/dist/.env", async () => {
+      const fs = new FakeFs();
+      const { deps } = makeDeps(fs, new FakePrompt(false), false);
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+
+      const content = fs.files.get(GITIGNORE_PATH)!;
+      expect(content).toContain("node_modules/");
+      expect(content).toContain("dist/");
+    });
+
+    test("brownfield (has commits) does NOT seed node_modules/dist", async () => {
+      const fs = new FakeFs();
+      const { deps } = makeDeps(fs, new FakePrompt(false), true);
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+
+      const content = fs.files.get(GITIGNORE_PATH)!;
+      expect(content).not.toContain("node_modules/");
+      expect(content).toContain(".diablo/");
+    });
+
+    test("does not rewrite a .gitignore that already has the managed block (idempotent)", async () => {
+      const fs = new FakeFs();
+      const { deps } = makeDeps(fs, new FakePrompt(false));
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+      const firstWriteCount = fs.writes.filter((p) => p === GITIGNORE_PATH).length;
+
+      // Re-run init against the same fs — the block is present, so no rewrite.
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+      const secondWriteCount = fs.writes.filter((p) => p === GITIGNORE_PATH).length;
+
+      expect(firstWriteCount).toBe(1);
+      expect(secondWriteCount).toBe(1);
+    });
+
+    test("preserves an existing .gitignore's content when adding the block", async () => {
+      const fs = new FakeFs({ [GITIGNORE_PATH]: "secrets.key\n" });
+      const { deps } = makeDeps(fs, new FakePrompt(false));
+      await initDiablo(deps, { configPath: CONFIG_PATH, gitignorePath: GITIGNORE_PATH });
+
+      const content = fs.files.get(GITIGNORE_PATH)!;
+      expect(content).toContain("secrets.key");
+      expect(content).toContain(".diablo/");
+    });
   });
 });

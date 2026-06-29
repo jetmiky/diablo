@@ -20,11 +20,19 @@
 import type { FsPort } from "../ports/fs.ts";
 import type { PromptPort } from "../ports/prompt.ts";
 import { defaultConfig } from "../domain/config.ts";
+import { mergeGitignore } from "../domain/gitignore.ts";
 import { PACKAGE_MANAGERS, type PackageManager } from "../domain/package-manager.ts";
 
 export interface InitDeps {
   fs: FsPort;
   prompt: PromptPort;
+  /**
+   * True when the repo already has commits. A fresh project (no commits, or not
+   * a git repo yet) is "greenfield" — diablo seeds common ignores there; an
+   * established repo owns its own conventions, so diablo contributes only its
+   * runtime dirs.
+   */
+  hasCommits: () => Promise<boolean>;
   /** Runs the interactive setup-matt-pocock-skills flow (real: a Pi session). */
   setupSkills: () => Promise<void>;
   /** Initialises a git repo if the directory is not already one (idempotent). */
@@ -36,6 +44,8 @@ export interface InitDeps {
 export interface InitConfig {
   /** Absolute path where diablo.config.json should be scaffolded. */
   configPath: string;
+  /** Absolute path where the project's .gitignore lives (created/merged). */
+  gitignorePath: string;
 }
 
 const BOOTSTRAP_QUESTION =
@@ -49,6 +59,7 @@ const PACKAGE_MANAGER_OPTIONS = [...PACKAGE_MANAGERS, "skip"] as const;
 
 export async function initDiablo(deps: InitDeps, config: InitConfig): Promise<void> {
   await scaffoldConfig(deps.fs, config.configPath);
+  await scaffoldGitignore(deps, config.gitignorePath);
   await deps.setupSkills();
 
   const wantsBootstrap = await deps.prompt.confirm(BOOTSTRAP_QUESTION);
@@ -78,4 +89,22 @@ async function scaffoldConfig(fs: FsPort, configPath: string): Promise<void> {
   if (await fs.exists(configPath)) return;
   const json = JSON.stringify(defaultConfig(), null, 2) + "\n";
   await fs.write(configPath, json);
+}
+
+/**
+ * Writes (or merges into) the project's .gitignore so diablo's machine-managed
+ * runtime dirs (.diablo/, .worktrees/) are never committed. Done at EVERY init
+ * — independent of the bootstrap choice — because those dirs are created by
+ * `run` even in non-Node ("skip") projects and when bootstrap is declined.
+ *
+ * Greenfield (no commits) additionally seeds common ignores. The merge is
+ * idempotent (mergeGitignore returns null when the managed block is already
+ * present), so re-running init never rewrites the file.
+ */
+async function scaffoldGitignore(deps: InitDeps, gitignorePath: string): Promise<void> {
+  const existing = (await deps.fs.exists(gitignorePath)) ? await deps.fs.read(gitignorePath) : null;
+  const greenfield = !(await deps.hasCommits());
+  const merged = mergeGitignore(existing, greenfield);
+  if (merged === null) return; // already present — idempotent no-op
+  await deps.fs.write(gitignorePath, merged);
 }

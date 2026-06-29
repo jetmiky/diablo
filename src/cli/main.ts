@@ -259,17 +259,19 @@ async function main(argv: string[]): Promise<number> {
     case "init": {
       const repoRoot = process.cwd();
       const configPath = `${repoRoot}/${CONFIG_FILENAME}`;
+      const gitignorePath = `${repoRoot}/.gitignore`;
       const runner = new NodeProcessRunner();
       const piBinary = resolvePiBinary(process.env);
       await initDiablo(
         {
           fs: new NodeFs(),
           prompt: new StdinPrompt(),
+          hasCommits: () => hasCommits(runner, repoRoot),
           setupSkills: () => runSetupSkills(piBinary, runner, repoRoot),
           gitInit: () => gitInit(runner, repoRoot),
           installTooling: (pm) => installTooling(runner, repoRoot, pm),
         },
-        { configPath },
+        { configPath, gitignorePath },
       );
       process.stdout.write(`\n✅ diablo initialized in ${repoRoot}\n`);
       return 0;
@@ -639,6 +641,18 @@ async function gitInit(runner: NodeProcessRunner, repoRoot: string): Promise<voi
   if (existsSync(`${repoRoot}/.git`)) return;
   process.stdout.write("\nInitialising git repository...\n");
   await runner.run("git", ["init"], repoRoot);
+}
+
+/**
+ * Returns true when the repo already has at least one commit. Used by init to
+ * decide greenfield (no commits → seed common ignores) vs brownfield (the repo
+ * owns its own conventions). `git rev-parse --verify HEAD` exits non-zero when
+ * there is no HEAD (no commits, or not a repo at all), which both map to
+ * "greenfield" — exactly the desired fresh-project semantics.
+ */
+async function hasCommits(runner: NodeProcessRunner, repoRoot: string): Promise<boolean> {
+  const outcome = await runner.run("git", ["rev-parse", "--verify", "HEAD"], repoRoot);
+  return outcome.exitCode === 0;
 }
 
 /**
