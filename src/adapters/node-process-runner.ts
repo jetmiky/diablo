@@ -21,17 +21,49 @@ import { spawn } from "node:child_process";
 import type { ProcessOutcome, ProcessRunner } from "../ports/agent.ts";
 
 export class NodeProcessRunner implements ProcessRunner {
-  run(command: string, args: string[], cwd: string): Promise<ProcessOutcome> {
+  run(
+    command: string,
+    args: string[],
+    cwd: string,
+    onLine?: (line: string) => void,
+  ): Promise<ProcessOutcome> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
 
       let stdout = "";
       let stderr = "";
-      child.stdout.on("data", (chunk) => (stdout += chunk.toString()));
+      // Carry for splitting stdout into complete lines for onLine: a chunk can
+      // end mid-line, so we hold the tail until its newline arrives.
+      let lineBuffer = "";
+
+      const pushLine = (line: string) => {
+        if (!onLine) return;
+        try {
+          onLine(line);
+        } catch {
+          // Streaming is best-effort: a sink throwing must never break the run.
+        }
+      };
+
+      child.stdout.on("data", (chunk) => {
+        const text = chunk.toString();
+        stdout += text;
+        if (!onLine) return;
+        lineBuffer += text;
+        let nl = lineBuffer.indexOf("\n");
+        while (nl >= 0) {
+          // Strip a trailing \r so CRLF streams deliver clean lines too.
+          pushLine(lineBuffer.slice(0, nl).replace(/\r$/, ""));
+          lineBuffer = lineBuffer.slice(nl + 1);
+          nl = lineBuffer.indexOf("\n");
+        }
+      });
       child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
 
       child.on("error", reject);
       child.on("close", (code) => {
+        // Flush any final line that had no trailing newline.
+        if (lineBuffer.length > 0) pushLine(lineBuffer.replace(/\r$/, ""));
         resolve({ stdout, stderr, exitCode: code ?? 0 });
       });
     });

@@ -291,4 +291,56 @@ describe("runStep heartbeat wiring", () => {
     await expect(runStep(d, baseStep)).rejects.toThrow(/code 1/);
     expect(beat!.stopped).toBe(true);
   });
+
+  test("a heartbeat tick carries the latest agent activity label", async () => {
+    const events: Array<{ kind: string; activity?: string }> = [];
+    let beat: FakeHeartbeat | undefined;
+    // An agent that reports activity, THEN a tick fires, then reports again,
+    // then another tick — so we prove the heartbeat reflects the most recent.
+    const agent: AgentPort = {
+      run: (_spec, onActivity) => {
+        onActivity?.("reading run-step.ts");
+        beat!.tick(1_000);
+        onActivity?.("running `bun test`");
+        beat!.tick(2_000);
+        return Promise.resolve(fakeResult());
+      },
+    };
+    const d: RunStepDeps = {
+      agent,
+      git: new FakeGit(),
+      progress: { emit: (e) => { events.push(e); return Promise.resolve(); } },
+      heartbeat: (onTick) => (beat = new FakeHeartbeat(onTick)),
+    };
+
+    await runStep(d, baseStep);
+
+    const hbs = events.filter((e) => e.kind === "heartbeat");
+    expect(hbs).toHaveLength(2);
+    expect(hbs[0]!.activity).toBe("reading run-step.ts");
+    expect(hbs[1]!.activity).toBe("running `bun test`");
+  });
+
+  test("a heartbeat tick before any activity has no activity label", async () => {
+    const events: Array<{ kind: string; activity?: string }> = [];
+    let beat: FakeHeartbeat | undefined;
+    const agent: AgentPort = {
+      run: () => {
+        beat!.tick(500); // tick before the agent reports any tool use
+        return Promise.resolve(fakeResult());
+      },
+    };
+    const d: RunStepDeps = {
+      agent,
+      git: new FakeGit(),
+      progress: { emit: (e) => { events.push(e); return Promise.resolve(); } },
+      heartbeat: (onTick) => (beat = new FakeHeartbeat(onTick)),
+    };
+
+    await runStep(d, baseStep);
+
+    const hb = events.find((e) => e.kind === "heartbeat");
+    expect(hb).toBeDefined();
+    expect(hb!.activity).toBeUndefined();
+  });
 });

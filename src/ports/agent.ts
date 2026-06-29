@@ -7,7 +7,14 @@ import type { RunSpec } from "../domain/run-spec.ts";
 import type { PiResult } from "../domain/pi-result.ts";
 
 export interface AgentPort {
-  run(spec: RunSpec): Promise<PiResult>;
+  /**
+   * Run one coding-agent step. The optional `onActivity` callback is invoked
+   * with a short human label ("editing run-step.ts", "running `bun test`")
+   * each time the agent starts a tool, so a caller can show live progress
+   * during the otherwise-silent run. Additive: callers that omit it are
+   * unaffected.
+   */
+  run(spec: RunSpec, onActivity?: (activity: string) => void): Promise<PiResult>;
 }
 
 /**
@@ -23,7 +30,20 @@ export interface ProcessOutcome {
 }
 
 export interface ProcessRunner {
-  run(command: string, args: string[], cwd: string): Promise<ProcessOutcome>;
+  /**
+   * Spawn a command and resolve with its captured output. The optional `onLine`
+   * callback is invoked with each COMPLETE stdout line (newline stripped) as it
+   * arrives, before the process closes — the streaming seam the live activity
+   * indicator reads Pi's JSONL events through. The full stdout is still buffered
+   * and returned for parsing; `onLine` is best-effort and additive, so callers
+   * that don't pass it behave exactly as before.
+   */
+  run(
+    command: string,
+    args: string[],
+    cwd: string,
+    onLine?: (line: string) => void,
+  ): Promise<ProcessOutcome>;
   /**
    * Like `run`, but inherits the parent's stdio so the child can prompt the
    * human and read their keystrokes — the binding for Socratic Pi sessions

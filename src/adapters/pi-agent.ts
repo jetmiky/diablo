@@ -9,6 +9,7 @@
 import type { AgentPort, ProcessRunner } from "../ports/agent.ts";
 import { buildPiArgs, type ModelOverrides, type RunSpec } from "../domain/run-spec.ts";
 import { parsePiResult, type PiResult } from "../domain/pi-result.ts";
+import { parsePiActivity } from "../domain/pi-activity.ts";
 
 export class PiAgent implements AgentPort {
   constructor(
@@ -18,10 +19,21 @@ export class PiAgent implements AgentPort {
     private readonly runId?: string,
   ) {}
 
-  async run(spec: RunSpec): Promise<PiResult> {
+  async run(spec: RunSpec, onActivity?: (activity: string) => void): Promise<PiResult> {
     const stamped = this.runId ? { ...spec, runId: this.runId } : spec;
     const args = buildPiArgs(stamped, this.overrides);
-    const outcome = await this.runner.run(this.piBinary, args, stamped.worktree);
+
+    // Stream Pi's JSONL stdout line-by-line, surfacing each tool_execution_start
+    // as a human activity label. Wired only when a caller wants activity, so a
+    // plain run pays nothing for the line-splitting.
+    const onLine = onActivity
+      ? (line: string) => {
+          const activity = parsePiActivity(line);
+          if (activity) onActivity(activity);
+        }
+      : undefined;
+
+    const outcome = await this.runner.run(this.piBinary, args, stamped.worktree, onLine);
 
     if (outcome.exitCode !== 0) {
       throw new Error(

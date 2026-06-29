@@ -122,9 +122,14 @@ function specOf(step: Step): RunSpec {
 async function runAgentWithHeartbeat(deps: RunStepDeps, step: Step): Promise<PiResult> {
   if (!deps.heartbeat) return deps.agent.run(specOf(step));
 
+  // The most recent activity label the agent reported (e.g. "editing foo.ts"),
+  // folded into each heartbeat tick so the liveness line reflects what the
+  // agent is doing right now. Undefined until the first tool starts.
+  let activity: string | undefined;
+
   const beat = deps.heartbeat((elapsedMs) => {
     void deps.progress
-      ?.emit({ kind: "heartbeat", stage: step.stage, elapsedMs })
+      ?.emit({ kind: "heartbeat", stage: step.stage, elapsedMs, ...(activity ? { activity } : {}) })
       .catch(() => {
         // Liveness is best-effort; a failed tick must never break the step.
       });
@@ -132,7 +137,9 @@ async function runAgentWithHeartbeat(deps: RunStepDeps, step: Step): Promise<PiR
 
   beat.start();
   try {
-    return await deps.agent.run(specOf(step));
+    return await deps.agent.run(specOf(step), (label) => {
+      activity = label;
+    });
   } finally {
     beat.stop();
   }

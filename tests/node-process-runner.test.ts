@@ -33,6 +33,44 @@ describe("NodeProcessRunner", () => {
       runner.run("definitely-not-a-real-binary-xyz", [], process.cwd()),
     ).rejects.toThrow();
   });
+
+  test("streams stdout to onLine, one complete line at a time, as the process runs", async () => {
+    const lines: string[] = [];
+    const out = await runner.run(
+      "node",
+      ["-e", "process.stdout.write('a\\nb\\nc\\n')"],
+      process.cwd(),
+      (line) => lines.push(line),
+    );
+    // Each complete line is delivered without its trailing newline...
+    expect(lines).toEqual(["a", "b", "c"]);
+    // ...and the buffered stdout is still returned intact for parsing.
+    expect(out.stdout).toBe("a\nb\nc\n");
+  });
+
+  test("delivers a final unterminated line (no trailing newline) on close", async () => {
+    const lines: string[] = [];
+    await runner.run(
+      "node",
+      ["-e", "process.stdout.write('x\\ny')"], // 'y' has no trailing \n
+      process.cwd(),
+      (line) => lines.push(line),
+    );
+    expect(lines).toEqual(["x", "y"]);
+  });
+
+  test("an onLine callback that throws never breaks the run (best-effort)", async () => {
+    const out = await runner.run(
+      "node",
+      ["-e", "process.stdout.write('one\\ntwo\\n')"],
+      process.cwd(),
+      () => {
+        throw new Error("sink blew up");
+      },
+    );
+    expect(out.exitCode).toBe(0);
+    expect(out.stdout).toBe("one\ntwo\n");
+  });
 });
 
 // runInteractive is the binding for Socratic Pi sessions (init's skill setup,
