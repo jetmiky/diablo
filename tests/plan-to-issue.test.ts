@@ -304,4 +304,18 @@ describe("planToIssue verification stages", () => {
     expect(stage.steps).toHaveLength(1);
     expect(stage.steps[0]!.tier).toBe("planner-med");
   });
+
+  test("the final verification instruction requires a per-criterion CRITERIA checklist", () => {
+    const finalVerify = planToIssue(verificationPlan, config).stages[1]!.steps[0]!;
+    const instruction = finalVerify.instruction.toLowerCase();
+    expect(instruction).toMatch(/criteria/i);
+    expect(instruction).toMatch(/checkbox|checklist|\[x\]|\[ \]/i);
+  });
+
+  test("the final verification instruction requires citing concrete evidence for each criterion", () => {
+    const finalVerify = planToIssue(verificationPlan, config).stages[1]!.steps[0]!;
+    const instruction = finalVerify.instruction.toLowerCase();
+    expect(instruction).toMatch(/evidence/i);
+    expect(instruction).toMatch(/test name|code path|command output/i);
+  });
 });

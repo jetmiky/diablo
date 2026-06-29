@@ -115,6 +115,10 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
         `You MUST actually run the project's gates, not just read the diff: run the typecheck ` +
         `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
         `they output. A type error or a failing test — anywhere — is a FAIL. Do not modify code. ` +
+        `Before the VERDICT line, emit a CRITERIA: checklist with one checkbox line per acceptance ` +
+        `criterion from the relevant tasks, marking each [x] (checked) when you can cite concrete ` +
+        `evidence (a test name, code path, or command output) that proves it, or [ ] (unchecked) ` +
+        `if you cannot point to evidence. ` +
         VERDICT_INSTRUCTION,
     };
     return { issue: config.issue, stage: stageId, steps: [finalVerify] };
