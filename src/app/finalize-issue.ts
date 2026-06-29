@@ -10,7 +10,7 @@
 import type { FsPort } from "../ports/fs.ts";
 import type { Verdict } from "../domain/verdict.ts";
 import type { DoneDecision } from "../domain/done-gate.ts";
-import { parseAcceptanceCriteria, parseCriteriaChecklist, markAllCriteriaChecked } from "../domain/acceptance.ts";
+import { parseAcceptanceSection, parseCriteriaChecklist, markAllCriteriaChecked } from "../domain/acceptance.ts";
 import { decideDone } from "../domain/done-gate.ts";
 import { writeStatus } from "./issue-status-store.ts";
 
@@ -38,12 +38,13 @@ export async function finalizeIssue(
     // File doesn't exist, treat criteria as empty
   }
   
-  // 2. Parse acceptance criteria and verifier results
-  const issueCriteria = parseAcceptanceCriteria(markdown);
+  // 2. Parse acceptance criteria (with section-presence) and verifier results
+  const { criteria: issueCriteria, sectionPresent } = parseAcceptanceSection(markdown);
   const verifierResults = parseCriteriaChecklist(opts.verifierText);
   
-  // 3. Make the done decision
-  const decision = decideDone(opts.verdict, issueCriteria, verifierResults);
+  // 3. Make the done decision (sectionPresent distinguishes a trivial ticket
+  //    from a malformed criteria section that parsed empty).
+  const decision = decideDone(opts.verdict, issueCriteria, verifierResults, { sectionPresent });
   
   // 4. Handle done case
   if (decision.status === "done") {

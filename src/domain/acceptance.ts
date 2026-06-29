@@ -18,25 +18,40 @@ const ACCEPTANCE_HEADING_RE = /^#{2,}\s+acceptance\s+criteria/i;
 const CHECKBOX_RE = /^-\s+\[([ x])\]\s+(.+)$/i;
 
 export function parseAcceptanceCriteria(markdown: string): AcceptanceCriterion[] {
+  return parseAcceptanceSection(markdown).criteria;
+}
+
+/**
+ * Like parseAcceptanceCriteria, but also reports whether an "## Acceptance
+ * criteria" heading was PRESENT at all. The done-gate needs this to tell a
+ * trivial ticket (no section → weak gate) apart from a malformed one (section
+ * present but zero parsed criteria → needs-human).
+ */
+export function parseAcceptanceSection(markdown: string): {
+  criteria: AcceptanceCriterion[];
+  sectionPresent: boolean;
+} {
   const lines = markdown.split("\n");
   const criteria: AcceptanceCriterion[] = [];
-  
+
   let inSection = false;
-  
+  let sectionPresent = false;
+
   for (const line of lines) {
     const trimmed = line.trim();
-    
+
     if (ACCEPTANCE_HEADING_RE.test(trimmed)) {
       inSection = true;
+      sectionPresent = true;
       continue;
     }
-    
+
     if (inSection) {
       // Stop at next heading
       if (trimmed.startsWith("#")) {
         break;
       }
-      
+
       // Parse checkbox
       const match = CHECKBOX_RE.exec(trimmed);
       if (match) {
@@ -46,8 +61,8 @@ export function parseAcceptanceCriteria(markdown: string): AcceptanceCriterion[]
       }
     }
   }
-  
-  return criteria;
+
+  return { criteria, sectionPresent };
 }
 
 export function markAllCriteriaChecked(markdown: string): string {
