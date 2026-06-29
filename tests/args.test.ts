@@ -20,12 +20,9 @@ describe("parseArgs", () => {
     expect(parseArgs([])).toEqual({ command: "help" });
   });
 
-  test("reports an error for run without an issue ref", () => {
+  test("run without an issue ref is valid and returns undefined issue", () => {
     const parsed = parseArgs(["run"]);
-    expect(parsed.command).toBe("error");
-    if (parsed.command === "error") {
-      expect(parsed.message).toMatch(/issue/i);
-    }
+    expect(parsed).toEqual({ command: "run", issue: undefined });
   });
 
   test("reports an error for an unknown command", () => {
@@ -141,5 +138,51 @@ describe("parseArgs", () => {
     if (parsed.command === "error") {
       expect(parsed.message).toMatch(/feature|intake/i);
     }
+  });
+
+  test("parses the plan command with an issue ref", () => {
+    expect(parseArgs(["plan", "billing-02"])).toEqual({
+      command: "plan",
+      issue: "billing-02",
+    });
+  });
+
+  test("plan without an issue ref is valid and returns undefined issue", () => {
+    const parsed = parseArgs(["plan"]);
+    expect(parsed).toEqual({ command: "plan", issue: undefined });
+  });
+
+  test("plan accepts model override flags", () => {
+    const parsed = parseArgs([
+      "plan",
+      "billing-02",
+      "--planner-model",
+      "claude-sonnet-4.5",
+      "--worker-model",
+      "claude-haiku-4.5",
+    ]);
+    expect(parsed).toEqual({
+      command: "plan",
+      issue: "billing-02",
+      plannerModel: "claude-sonnet-4.5",
+      workerModel: "claude-haiku-4.5",
+    });
+  });
+
+  test("plan with model flag missing value is an error", () => {
+    const parsed = parseArgs(["plan", "billing-02", "--worker-model"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/worker-model/i);
+    }
+  });
+
+  test("bare run with model flags is valid", () => {
+    const parsed = parseArgs(["run", "--planner-model", "test"]);
+    expect(parsed).toEqual({
+      command: "run",
+      issue: undefined,
+      plannerModel: "test",
+    });
   });
 });

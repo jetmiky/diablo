@@ -30,6 +30,12 @@ export class StdinPrompt implements PromptPort {
     const match = options.find((opt) => opt.toLowerCase() === raw.toLowerCase());
     return match ?? options[0]!;
   }
+
+  async ask(question: string): Promise<string> {
+    process.stdout.write(`${question} `);
+    const answer = await readLine();
+    return answer.trim();
+  }
 }
 
 function readLine(): Promise<string> {
