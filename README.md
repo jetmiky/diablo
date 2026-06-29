@@ -23,10 +23,13 @@ Early development. Building the core step-execution primitive first (sequential,
 
 ## Try it
 
-New to diablo? [`docs/tutorial.md`](docs/tutorial.md) is a step-by-step,
+New to diablo? [`docs/tutorial/`](docs/tutorial/README.md) is a step-by-step,
 follow-along guide that runs diablo end to end on a small toy project (a Roman
-numeral converter) — init, plan, implement, verify, integrate. The toy
-requirement it uses lives in [`TOYPROJECT.md`](TOYPROJECT.md).
+numeral converter) — init, plan, implement, verify, integrate. It offers two
+ways in: run a ready-made ticket ([`toy-project.md`](docs/tutorial/toy-project.md))
+for the quickest win, or build that same ticket up from a rough idea
+([`toy-idea.md`](docs/tutorial/toy-idea.md)) through the interactive
+`diablo intake` interview.
 
 ## Requirements
 

@@ -5,8 +5,16 @@ toy project — a Roman numeral converter library. By the end you'll have watche
 diablo plan the work, implement it stage by stage behind tests, verify each
 stage, and hand you the result as commits on an isolated branch.
 
-The toy requirement lives in [`TOYPROJECT.md`](../TOYPROJECT.md) at the repo
-root. You'll copy it into a fresh project as diablo's "ticket."
+There are **two ways in**, and this guide covers both:
+
+| Path | Start from | Best when you want to see… |
+| ---- | ---------- | -------------------------- |
+| **A — Run a ready ticket** | [`toy-project.md`](toy-project.md) (a matured requirement) | the core engine fast: plan → implement → verify → integrate |
+| **B — Intake from a rough idea** | [`toy-idea.md`](toy-idea.md) (a few vague bullets) | the *full* workflow: an interactive interview that builds the ticket for you, then runs it |
+
+Both paths converge on the same `diablo run` and produce the same library. If
+this is your first time, do **Path A** — it's the quickest reproducible win.
+Come back for **Path B** when you want the discussion-first experience.
 
 > **Time:** ~10 minutes of your attention, plus agent run time.
 > **Cost:** real model calls run through Pi — this is not a dry run.
@@ -16,6 +24,8 @@ root. You'll copy it into a fresh project as diablo's "ticket."
 ## What you'll learn
 
 - How `diablo init` scaffolds a project
+- *(Path B)* How `diablo intake` turns a fuzzy idea into a PRD and tracked issues
+  through an interactive grilling session
 - How diablo reads a ticket from `.scratch/<issue>/` and freezes a plan
 - How the `design → worker → verifier` pipeline runs each stage
 - How the `gate` config inserts a human approval checkpoint (we'll use it)
@@ -118,7 +128,8 @@ What this does, in order:
 1. **Scaffolds `diablo.config.json`** with built-in defaults (it won't clobber an
    existing one).
 2. **Runs the skill-setup flow** — an interactive Pi session that installs the
-   engineering skills the pipeline drives.
+   engineering skills the pipeline drives. This is a real conversation: it
+   prompts you and waits for your answers, right in the terminal.
 3. **Asks (opt-in) whether to bootstrap tooling.** Answer **yes** when prompted,
    then choose **bun** as the package manager. diablo will `git init` the repo
    and install husky + commitlint.
@@ -174,20 +185,109 @@ cat diablo.config.json
 }
 ```
 
-See the [Configure section of the README](../README.md#configure) for what every
-field means.
+See the [Configure section of the README](../../README.md#configure) for what
+every field means.
 
 ---
 
-## Step 3 — Turn on the approval gate (so you can watch each stage)
+## Step 3 — Get a ticket into `.scratch/roman-converter/`
+
+This is where the two paths differ. Pick one, land a ticket under
+`.scratch/roman-converter/`, then rejoin at **Step 4**.
+
+diablo reads run tickets from `.scratch/<issue>/` — one or more `.md` files in a
+directory named after the issue. We'll name our issue `roman-converter` either
+way.
+
+### Path A — Drop in the ready-made ticket
+
+The fast path: copy the matured requirement straight into place.
+
+```bash
+mkdir -p .scratch/roman-converter
+cp "$DIABLO_SRC/docs/tutorial/toy-project.md" .scratch/roman-converter/01-roman.md
+```
+
+Confirm it landed:
+
+```bash
+ls .scratch/roman-converter/
+# → 01-roman.md
+```
+
+> **What makes a valid ticket?** Any markdown with a clear "What to build" and a
+> checklist of "Acceptance criteria" — the planner reads these to break the work
+> into TDD stages. [`toy-project.md`](toy-project.md) is already written in this
+> shape. Now skip to **Step 4**.
+
+### Path B — Build the ticket with `diablo intake`
+
+The full path: instead of pasting a finished ticket, you hand diablo a rough
+idea and let it interview you into a precise one. Open
+[`toy-idea.md`](toy-idea.md) — it's just a handful of vague bullets, the way an
+idea actually arrives.
+
+Start the intake:
+
+```bash
+diablo intake roman-converter
+```
+
+`intake` is **interactive** — it runs a Socratic `grill-with-docs` session that
+talks to you in the terminal. When it asks what you want to build, paste the
+bullets from `toy-idea.md` as your opening answer, then let it drive. It will
+press you on exactly the things the idea left vague:
+
+- *What number range?* → you settle on `1`–`3999`
+- *Reject "IIII" as well as "banana"?* → yes, only canonical forms
+- *What error types?* → `RangeError` for out-of-range, a plain `Error` for
+  invalid numerals
+- *Case-insensitive input?* → yes
+
+The flow runs in this order:
+
+1. **grill** — the interview above, gathering requirements into
+   `.scratch/roman-converter/`.
+2. **state-machine modeling (optional)** — it asks whether the feature is
+   stateful enough to model first. The Roman converter is a pure function with
+   no states, so answer **N** here.
+3. **to-prd** — it authors a PRD from what the grill gathered.
+4. **approval checkpoint** — it shows you the PRD and asks
+   `Approve this PRD and decompose it into issues?`. Review it, then answer
+   **y**.
+5. **to-issues** — it decomposes the approved PRD into one or more issue files
+   under `.scratch/roman-converter/`.
+
+When it finishes you'll see something like:
+
+```
+✅ intake of roman-converter complete — issues in .scratch/roman-converter
+   Next: diablo run <issue>
+```
+
+Confirm the issues landed:
+
+```bash
+ls .scratch/roman-converter/
+# → one or more .md files (a PRD + issue tickets)
+```
+
+> **Heads up — intake is non-deterministic.** Unlike Path A, every intake
+> conversation is different: your answers shape the PRD, so the exact wording,
+> the number of issue files, and their structure will vary from this guide and
+> from run to run. That's expected. What matters is that you end up with a
+> ticket in `.scratch/roman-converter/` carrying a clear "what to build" and
+> acceptance criteria — which the next step runs. If you decline the PRD at the
+> approval checkpoint, intake stops cleanly after the PRD with no issues
+> written, and you can re-run `diablo intake roman-converter` to continue.
+
+---
+
+## Step 4 — Turn on the approval gate (so you can watch each stage)
 
 By default `gate` is `"none"` — diablo runs fully autonomous (AFK) and won't
 pause. For this tutorial we want to **see** each stage as it passes, so switch
-the gate to `"approval"`:
-
-```bash
-# Edit diablo.config.json and change "gate": "none" to "gate": "approval"
-```
+the gate to `"approval"`.
 
 Open `diablo.config.json` in your editor and change that one line:
 
@@ -215,31 +315,6 @@ verification.
 
 > Want the hands-off experience instead? Leave `gate` as `"none"` and diablo
 > runs start to finish without stopping.
-
----
-
-## Step 4 — Drop in the toy ticket
-
-diablo reads run tickets from `.scratch/<issue>/` — one or more `.md` files in a
-directory named after the issue. We'll name our issue `roman-converter`.
-
-Copy the toy requirement into place:
-
-```bash
-mkdir -p .scratch/roman-converter
-cp "$DIABLO_SRC/TOYPROJECT.md" .scratch/roman-converter/01-roman.md
-```
-
-Confirm it landed:
-
-```bash
-ls .scratch/roman-converter/
-# → 01-roman.md
-```
-
-> **What makes a valid ticket?** Any markdown with a clear "What to build" and a
-> checklist of "Acceptance criteria" — the planner reads these to break the work
-> into TDD stages. `TOYPROJECT.md` is already written in this shape.
 
 ---
 
@@ -358,10 +433,10 @@ Once the basic run works, experiment:
 
 | Try this                      | How                                                          | What changes                                                          |
 | ----------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **The other path**           | did Path A? do Path B (or vice versa) on a fresh issue name  | feel the difference between a ready ticket and an intake interview     |
 | **Fully autonomous**          | set `"gate": "none"` in `diablo.config.json`                 | no pauses — diablo runs start to finish                               |
 | **Auto-merge on pass**        | set `"integration.autoMerge": true`                          | a clean run merges into `main` automatically                          |
 | **Cheaper/faster run**        | `diablo run roman-converter --worker-model claude-haiku-4.5` | a CLI flag overrides the config for one run                           |
-| **Requirements from scratch** | `diablo intake roman-converter`                              | interactive grilling → PRD → issues, instead of hand-writing a ticket |
 | **Refactor flow**             | `diablo refactor <area>`                                     | same pipeline, but the planner produces a refactor plan               |
 
 ---
@@ -372,6 +447,7 @@ Once the basic run works, experiment:
 | ------------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
 | First agent step fails immediately    | Pi not configured (provider/auth)    | run `pi --version` and set up Pi first                                |
 | `spawn pi ENOENT`                     | `pi` not on `PATH` in this shell     | ensure `which pi` succeeds, or set `DIABLO_PI_BIN` to its absolute path |
+| Skill setup / intake shows no prompts | running an old build (pre-`runInteractive`) | the interactive sessions inherit your terminal — rebuild/reinstall diablo so you're on the current version |
 | `exit code 127` on commit             | bun not on PATH for the husky hook   | `export PATH="$HOME/.bun/bin:$PATH"` before running                   |
 | `Vendored skills directory not found` | diablo invoked by a broken path      | use the absolute path to `src/cli/main.ts` from step 0                |
 | Plan file not written                 | planner step didn't produce the plan | check the ticket has clear "What to build" + acceptance criteria      |

@@ -8,8 +8,11 @@ deterministic — an ideal toy for exercising diablo end to end: the planner can
 break it into clean TDD stages, the worker can implement each behind tests, and
 the verifier has unambiguous acceptance criteria to judge against.
 
-This file IS a diablo run ticket. The companion guide (`docs/tutorial.md`) tells
-you where to copy it so `diablo run` picks it up.
+This file IS a diablo run ticket — a matured requirement, ready to hand
+straight to `diablo run`. The companion guide ([`README.md`](README.md)) tells
+you where to copy it. If you'd rather build this same requirement up from a
+rough idea through an interactive interview, start from [`toy-idea.md`](toy-idea.md)
+on the `diablo intake` path instead.
 
 ## What to build
 
