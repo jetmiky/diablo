@@ -86,10 +86,15 @@ cannot be AFK — so it is a separate command:
 1. **grill-with-docs** — an interactive session that gathers requirements,
    adapting to the project: brownfield reads existing code + `CONTEXT.md`,
    greenfield starts from an empty glossary.
-2. **to-prd** — authors a PRD from the gathered requirements.
-3. **human approval checkpoint** — you approve the PRD before it is decomposed;
+2. **state-machine modeling** (optional) — for stateful features, an interactive
+   `domain-modeling` session enumerates states/transitions/guards/events and
+   writes a `state-machine.md` artifact the PRD step then incorporates. You're
+   asked up front; declining skips it cleanly so simple features aren't burdened.
+3. **to-prd** — authors a PRD from the gathered requirements (and the state
+   machine, when modeled).
+4. **human approval checkpoint** — you approve the PRD before it is decomposed;
    declining stops cleanly with the PRD saved and no issues written.
-4. **to-issues** — decomposes the approved PRD into tracked issues under
+5. **to-issues** — decomposes the approved PRD into tracked issues under
    `.scratch/<feature>/`, which `diablo run` then picks up.
 
 ## Run vs refactor

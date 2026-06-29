@@ -391,11 +391,23 @@ async function executeIntake(feature: string): Promise<number> {
             `Write the gathered requirements under ${ctx.scratchDir}.`,
         );
       },
+      modelStateMachine: (ctx: GrillContext) => {
+        process.stdout.write(`\nModeling the state machine (interactive)...\n`);
+        return interactiveSkill(
+          "domain-modeling",
+          `Model the state machine for the feature "${ctx.feature}" following the domain-modeling skill: ` +
+            `enumerate the states, transitions, guards, and events. ` +
+            `Write the state machine as markdown to ${ctx.stateMachinePath} so the PRD step can incorporate it.`,
+        );
+      },
       toPrd: (ctx: GrillContext) => {
         process.stdout.write(`\nAuthoring the PRD (interactive)...\n`);
         return interactiveSkill(
           "to-prd",
           `Turn the gathered requirements for "${ctx.feature}" into a PRD following the to-prd skill. ` +
+            (ctx.stateMachinePath
+              ? `Incorporate the state machine modeled at ${ctx.stateMachinePath}. `
+              : "") +
             `Write the PRD under ${ctx.scratchDir}.`,
         );
       },
