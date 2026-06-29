@@ -21,7 +21,7 @@ import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { setupTelegram } from "../app/setup-telegram.ts";
 import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
-import { resolveModels, type ConfigModels, type DiabloConfig } from "../domain/config.ts";
+import { resolveModels, type ConfigModels, type ConfigLimits, type DiabloConfig } from "../domain/config.ts";
 import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
 import { huskyArtifacts } from "../domain/husky-hooks.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
@@ -31,6 +31,7 @@ import { TelegramProgress } from "../adapters/telegram-progress.ts";
 import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
 import { FanOutProgress } from "../adapters/fan-out-progress.ts";
 import { Heartbeat } from "../domain/heartbeat.ts";
+import { RunBudget } from "../domain/run-budget.ts";
 import {
   parseTelegramCredentialsFile,
   resolveTelegramCredentials,
@@ -44,8 +45,9 @@ import { negotiatePlan } from "../app/negotiate-plan.ts";
 import { finalizeIssue } from "../app/finalize-issue.ts";
 import { readStatus, writeStatus } from "../app/issue-status-store.ts";
 import { listFor, type SelectorContext } from "../domain/issue-listing.ts";
-import { VerificationFailedError } from "../app/run-step.ts";
+import { VerificationFailedError, StepTimeoutError } from "../app/run-step.ts";
 import { PlanParseError } from "../domain/plan.ts";
+import { RunBudgetExceededError } from "../domain/run-budget.ts";
 
 const VERSION = "0.1.0";
 
@@ -128,6 +130,7 @@ function buildDeps(
   overrides: ModelOverrides,
   runId: string,
   progress: RunDiabloDeps["progress"],
+  limits: ConfigLimits,
 ): RunDiabloDeps {
   const runner = new NodeProcessRunner();
   const piBinary = resolvePiBinary(process.env);
@@ -140,6 +143,23 @@ function buildDeps(
     // A fresh liveness ticker per step: ticks every second so stdout animates a
     // spinner; the Telegram sink throttles those ticks to its own 15s window.
     heartbeat: (onTick) => new Heartbeat({ emit: onTick }),
+    // A fresh per-step deadline: fires onExpire after stepTimeoutMs, which
+    // run-step turns into an abort+kill+StepTimeoutError. unref so the timer
+    // never keeps the process alive on its own.
+    deadline: (onExpire) => {
+      let handle: ReturnType<typeof setTimeout> | undefined;
+      return {
+        start() {
+          handle = setTimeout(onExpire, limits.stepTimeoutMs);
+          handle.unref?.();
+        },
+        stop() {
+          if (handle) clearTimeout(handle);
+        },
+      };
+    },
+    // One budget per run (wall-clock + step count); checked before each step.
+    budget: new RunBudget(limits),
   };
 }
 
@@ -518,7 +538,7 @@ async function executeRun(
 
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
   const progress = buildProgress(progressPath, target, repoRoot);
-  const deps = buildDeps(repoRoot, overrides, runId, progress);
+  const deps = buildDeps(repoRoot, overrides, runId, progress, config.limits);
 
   await writeStatus({ fs }, { diabloDir, issue: target, status: "in-progress" });
 
@@ -576,6 +596,26 @@ async function executeRun(
       process.stdout.write(
         `\n⚠️  ${noun} ${target} halted: the plan could not be parsed after a re-ask — status: needs-human.\n` +
           `   ${err.diagnostic}\n`,
+      );
+      return 1;
+    }
+    if (err instanceof StepTimeoutError) {
+      // A step blew past its deadline and was killed. Committed work stays on
+      // the branch; halt to a human rather than hanging or silently dropping.
+      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
+      process.stdout.write(
+        `\n⚠️  ${noun} ${target} halted: a step exceeded its deadline and was aborted — status: needs-human.\n` +
+          `   ${err.message}\n`,
+      );
+      return 1;
+    }
+    if (err instanceof RunBudgetExceededError) {
+      // The run hit its wall-clock or step-count ceiling. Stop cleanly, keep
+      // committed work, and report which limit tripped.
+      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
+      process.stdout.write(
+        `\n⚠️  ${noun} ${target} halted: run budget exceeded — status: needs-human.\n` +
+          `   ${err.message}\n`,
       );
       return 1;
     }

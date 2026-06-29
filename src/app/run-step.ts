@@ -41,6 +41,22 @@ export class VerificationFailedError extends Error {
   }
 }
 
+/**
+ * Thrown when an agent step exceeds its per-step deadline. run-step aborts the
+ * agent (killing the underlying process via the abort signal) and throws this,
+ * so an unattended step cannot hang forever. The caller halts the run cleanly
+ * to a human rather than waiting indefinitely.
+ */
+export class StepTimeoutError extends Error {
+  constructor(
+    readonly issue: string,
+    readonly stage: string,
+  ) {
+    super(`Step ${issue}/${stage} exceeded its deadline and was aborted.`);
+    this.name = "StepTimeoutError";
+  }
+}
+
 export interface Step {
   tier: Tier;
   issue: string;
@@ -94,6 +110,32 @@ export interface RunStepDeps {
    * the timer is injected and the wiring is unit-tested without a real clock.
    */
   heartbeat?: (onTick: (elapsedMs: number) => void) => HeartbeatHandle;
+  /**
+   * Optional per-step deadline factory. When present, runStep arms a deadline
+   * around the agent call: the factory receives an `onExpire` callback and
+   * returns a start/stop handle. On expiry, runStep aborts the agent (killing
+   * the underlying process via an AbortSignal) and throws StepTimeoutError, so
+   * an unattended step cannot hang forever. Injected so the timeout is
+   * unit-tested by firing expiry by hand, with no real timer.
+   */
+  deadline?: (onExpire: () => void) => DeadlineHandle;
+  /**
+   * Optional global run-budget gate. When present, runStep calls `check()`
+   * BEFORE running the agent; a breach throws (RunBudgetExceededError) and the
+   * agent never runs, so a runaway run is stopped at the next step boundary.
+   */
+  budget?: BudgetGate;
+}
+
+/** A started/stoppable per-step deadline handle (see RunStepDeps.deadline). */
+export interface DeadlineHandle {
+  start(): void;
+  stop(): void;
+}
+
+/** The run-budget seam: check() throws when a ceiling is breached. */
+export interface BudgetGate {
+  check(): void;
 }
 
 /** A started/stoppable liveness ticker handle (see RunStepDeps.heartbeat). */
@@ -120,15 +162,19 @@ function specOf(step: Step): RunSpec {
 }
 
 /**
- * Runs the agent for a step, bracketing it with the optional liveness heartbeat.
- * The ticker is started before the (long, silent) agent call and stopped in a
- * finally so it never outlives the call — even when the run throws. Each tick
- * is forwarded as a `heartbeat` progress event for the step's stage; emit
- * failures are swallowed so liveness never breaks the run. With no heartbeat
- * factory (the default), this is just `agent.run`.
+ * Runs the agent for a step, bracketing it with the optional liveness heartbeat
+ * and forwarding the optional abort signal (used by the per-step deadline to
+ * kill a hung run). The ticker is started before the (long, silent) agent call
+ * and stopped in a finally so it never outlives the call — even when the run
+ * throws. Each tick is forwarded as a `heartbeat` progress event; emit failures
+ * are swallowed so liveness never breaks the run.
  */
-async function runAgentWithHeartbeat(deps: RunStepDeps, step: Step): Promise<PiResult> {
-  if (!deps.heartbeat) return deps.agent.run(specOf(step));
+async function runAgentWithHeartbeat(
+  deps: RunStepDeps,
+  step: Step,
+  signal?: AbortSignal,
+): Promise<PiResult> {
+  if (!deps.heartbeat) return deps.agent.run(specOf(step), undefined, signal);
 
   // The most recent activity label the agent reported (e.g. "editing foo.ts"),
   // folded into each heartbeat tick so the liveness line reflects what the
@@ -145,16 +191,54 @@ async function runAgentWithHeartbeat(deps: RunStepDeps, step: Step): Promise<PiR
 
   beat.start();
   try {
-    return await deps.agent.run(specOf(step), (label) => {
-      activity = label;
-    });
+    return await deps.agent.run(
+      specOf(step),
+      (label) => {
+        activity = label;
+      },
+      signal,
+    );
   } finally {
     beat.stop();
   }
 }
 
+/**
+ * Runs the agent for a step under an optional per-step deadline. When a deadline
+ * factory is present, an AbortController is wired so the deadline's expiry
+ * aborts the agent (killing the underlying process); the agent's rejection is
+ * then surfaced as a StepTimeoutError. The deadline is always stopped in a
+ * finally. With no deadline factory, this is just the heartbeat-bracketed run.
+ */
+async function runAgentWithDeadline(deps: RunStepDeps, step: Step): Promise<PiResult> {
+  if (!deps.deadline) return runAgentWithHeartbeat(deps, step);
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const handle = deps.deadline(() => {
+    timedOut = true;
+    controller.abort();
+  });
+
+  handle.start();
+  try {
+    return await runAgentWithHeartbeat(deps, step, controller.signal);
+  } catch (err) {
+    // A rejection caused by our own deadline-driven abort becomes a typed
+    // timeout; any other failure propagates unchanged.
+    if (timedOut) throw new StepTimeoutError(step.issue, step.stage);
+    throw err;
+  } finally {
+    handle.stop();
+  }
+}
+
 export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult> {
-  const result = await runAgentWithHeartbeat(deps, step);
+  // Global circuit breaker: account for this step and assert the run is still
+  // within its wall-clock + step-count budget BEFORE spending an agent call.
+  deps.budget?.check();
+
+  const result = await runAgentWithDeadline(deps, step);
 
   // Never commit work from a run that ended in error.
   if (result.stopReason === "error") {

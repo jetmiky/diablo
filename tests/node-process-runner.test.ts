@@ -71,6 +71,31 @@ describe("NodeProcessRunner", () => {
     expect(out.exitCode).toBe(0);
     expect(out.stdout).toBe("one\ntwo\n");
   });
+
+  test("an abort signal kills a long-running child and rejects (deadline kill)", async () => {
+    const controller = new AbortController();
+    // A child that would otherwise run ~30s; abort it shortly after spawn.
+    const promise = runner.run(
+      "node",
+      ["-e", "setTimeout(() => {}, 30000)"],
+      process.cwd(),
+      undefined,
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 50);
+    const started = Date.now();
+    await expect(promise).rejects.toThrow(/abort|killed/i);
+    // It returned because it was killed, not because it ran to completion.
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  test("a signal already aborted before spawn still kills and rejects", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runner.run("node", ["-e", "setTimeout(() => {}, 30000)"], process.cwd(), undefined, controller.signal),
+    ).rejects.toThrow(/abort|killed/i);
+  });
 });
 
 // runInteractive is the binding for Socratic Pi sessions (init's skill setup,

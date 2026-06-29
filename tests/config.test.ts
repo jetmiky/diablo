@@ -59,6 +59,32 @@ describe("parseConfig", () => {
     expect(parseConfig('{ "retry": { "limit": 5 } }').retry.limit).toBe(5);
   });
 
+  test("defaults limits to generous values that won't false-trip a normal run", () => {
+    const cfg = parseConfig("{}");
+    // A long-but-bounded step ceiling and a whole-run ceiling. Defaults are
+    // generous; they exist to stop a pathological hang/runaway, not normal runs.
+    expect(cfg.limits.stepTimeoutMs).toBe(20 * 60 * 1000); // 20 min per step
+    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000); // 4 h per run
+    expect(cfg.limits.maxSteps).toBe(200); // step-count circuit breaker
+  });
+
+  test("reads limits overrides, keeping defaults for the rest", () => {
+    const cfg = parseConfig('{ "limits": { "stepTimeoutMs": 60000 } }');
+    expect(cfg.limits.stepTimeoutMs).toBe(60000);
+    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000); // default kept
+    expect(cfg.limits.maxSteps).toBe(200); // default kept
+  });
+
+  test("rejects a non-positive step timeout", () => {
+    expect(() => parseConfig('{ "limits": { "stepTimeoutMs": 0 } }')).toThrow(/stepTimeoutMs/i);
+    expect(() => parseConfig('{ "limits": { "stepTimeoutMs": -5 } }')).toThrow(/stepTimeoutMs/i);
+  });
+
+  test("rejects a non-positive run budget and a non-positive maxSteps", () => {
+    expect(() => parseConfig('{ "limits": { "runBudgetMs": 0 } }')).toThrow(/runBudgetMs/i);
+    expect(() => parseConfig('{ "limits": { "maxSteps": 0 } }')).toThrow(/maxSteps/i);
+  });
+
   test("throws a clear error on malformed JSON", () => {
     expect(() => parseConfig("{ not json")).toThrow(/config.*json|parse|invalid/i);
   });

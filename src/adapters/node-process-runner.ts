@@ -26,9 +26,25 @@ export class NodeProcessRunner implements ProcessRunner {
     args: string[],
     cwd: string,
     onLine?: (line: string) => void,
+    signal?: AbortSignal,
   ): Promise<ProcessOutcome> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+
+      // Per-step deadline (run-step) can abort a hung run: kill the child so the
+      // OS process actually dies, then reject so the caller surfaces a timeout.
+      // SIGTERM first; if the child ignores it, SIGKILL shortly after.
+      let killed = false;
+      const onAbort = () => {
+        killed = true;
+        child.kill("SIGTERM");
+        const hardKill = setTimeout(() => child.kill("SIGKILL"), 2000);
+        hardKill.unref?.();
+      };
+      if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener("abort", onAbort, { once: true });
+      }
 
       let stdout = "";
       let stderr = "";
@@ -62,6 +78,13 @@ export class NodeProcessRunner implements ProcessRunner {
 
       child.on("error", reject);
       child.on("close", (code) => {
+        if (signal) signal.removeEventListener("abort", onAbort);
+        // A deadline-driven kill is a failure, surfaced as a rejection so the
+        // caller (run-step) maps it to a StepTimeoutError.
+        if (killed) {
+          reject(new Error(`Process aborted (killed by deadline) after running ${command}.`));
+          return;
+        }
         // Flush any final line that had no trailing newline.
         if (lineBuffer.length > 0) pushLine(lineBuffer.replace(/\r$/, ""));
         resolve({ stdout, stderr, exitCode: code ?? 0 });

@@ -30,11 +30,25 @@ export interface ConfigRetry {
   limit: number;
 }
 
+/**
+ * Safety ceilings for an unattended run. Generous by default — these exist to
+ * stop a pathological hang or runaway, never to clip a legitimately long run.
+ */
+export interface ConfigLimits {
+  /** Max wall-clock for a SINGLE agent step before it is killed (ms). */
+  stepTimeoutMs: number;
+  /** Max wall-clock for the WHOLE run before it aborts cleanly (ms). */
+  runBudgetMs: number;
+  /** Max number of agent steps in a run before it aborts (circuit breaker). */
+  maxSteps: number;
+}
+
 export interface DiabloConfig {
   models: ConfigModels;
   integration: ConfigIntegration;
   gate: GateMode;
   retry: ConfigRetry;
+  limits: ConfigLimits;
   /** Optional override for the vendored skills directory; resolver decides when absent. */
   skillsDir?: string;
 }
@@ -63,6 +77,11 @@ export function defaultConfig(): DiabloConfig {
     },
     gate: "none",
     retry: { limit: 2 },
+    limits: {
+      stepTimeoutMs: 20 * 60 * 1000, // 20 min — a long but bounded single step
+      runBudgetMs: 4 * 60 * 60 * 1000, // 4 h — a whole-run wall-clock ceiling
+      maxSteps: 200, // step-count circuit breaker
+    },
   };
 }
 
@@ -93,9 +112,10 @@ export function parseConfig(text: string): DiabloConfig {
   const models = mergeModels(base.models, obj.models);
   const integration = mergeIntegration(base.integration, obj.integration);
   const retry = mergeRetry(base.retry, obj.retry);
+  const limits = mergeLimits(base.limits, obj.limits);
   const gate = parseGate(obj.gate, base.gate);
 
-  const config: DiabloConfig = { models, integration, gate, retry };
+  const config: DiabloConfig = { models, integration, gate, retry, limits };
   if (typeof obj.skillsDir === "string") config.skillsDir = obj.skillsDir;
   return config;
 }
@@ -150,6 +170,28 @@ function mergeRetry(base: ConfigRetry, raw: unknown): ConfigRetry {
     throw new Error("Invalid diablo config: 'retry.limit' must be a non-negative integer.");
   }
   return { limit: typeof limit === "number" ? limit : base.limit };
+}
+
+function mergeLimits(base: ConfigLimits, raw: unknown): ConfigLimits {
+  if (raw === undefined) return base;
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("Invalid diablo config: 'limits' must be an object.");
+  }
+  const l = raw as Record<string, unknown>;
+  return {
+    stepTimeoutMs: positiveInt(l.stepTimeoutMs, base.stepTimeoutMs, "limits.stepTimeoutMs"),
+    runBudgetMs: positiveInt(l.runBudgetMs, base.runBudgetMs, "limits.runBudgetMs"),
+    maxSteps: positiveInt(l.maxSteps, base.maxSteps, "limits.maxSteps"),
+  };
+}
+
+/** A present value must be a positive integer; absent falls back to the default. */
+function positiveInt(value: unknown, fallback: number, name: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid diablo config: '${name}' must be a positive integer.`);
+  }
+  return value;
 }
 
 function parseGate(raw: unknown, fallback: GateMode): GateMode {

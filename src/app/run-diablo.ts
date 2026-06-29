@@ -45,6 +45,10 @@ export interface RunDiabloDeps {
   progress?: ProgressPort;
   /** Optional liveness-ticker factory; bracketed around each agent run (see RunStepDeps). */
   heartbeat?: RunStepDeps["heartbeat"];
+  /** Optional per-step deadline factory; arms a kill-on-timeout around each agent run. */
+  deadline?: RunStepDeps["deadline"];
+  /** Optional global run-budget gate; checked before each step (wall-clock + step count). */
+  budget?: RunStepDeps["budget"];
 }
 
 export interface RunDiabloResult extends IssueResult {
@@ -74,7 +78,15 @@ export async function runDiablo(
   const issue = await loadIssue(deps, config);
 
   const result = await runIssue(
-    { agent: deps.agent, git: deps.git, gate: deps.gate, progress: deps.progress, heartbeat: deps.heartbeat },
+    {
+      agent: deps.agent,
+      git: deps.git,
+      gate: deps.gate,
+      progress: deps.progress,
+      heartbeat: deps.heartbeat,
+      deadline: deps.deadline,
+      budget: deps.budget,
+    },
     issue,
     config.retry ?? { limit: 0 },
   );

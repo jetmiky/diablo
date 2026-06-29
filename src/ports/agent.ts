@@ -13,8 +13,16 @@ export interface AgentPort {
    * each time the agent starts a tool, so a caller can show live progress
    * during the otherwise-silent run. Additive: callers that omit it are
    * unaffected.
+   *
+   * The optional `signal` aborts a long/hung run: when it fires, the adapter
+   * kills the underlying process and rejects. The run loop wires this to a
+   * per-step deadline so an unattended step cannot hang forever.
    */
-  run(spec: RunSpec, onActivity?: (activity: string) => void): Promise<PiResult>;
+  run(
+    spec: RunSpec,
+    onActivity?: (activity: string) => void,
+    signal?: AbortSignal,
+  ): Promise<PiResult>;
 }
 
 /**
@@ -43,6 +51,7 @@ export interface ProcessRunner {
     args: string[],
     cwd: string,
     onLine?: (line: string) => void,
+    signal?: AbortSignal,
   ): Promise<ProcessOutcome>;
   /**
    * Like `run`, but inherits the parent's stdio so the child can prompt the

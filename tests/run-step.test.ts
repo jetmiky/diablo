@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { runStep, VerificationFailedError, type RunStepDeps, type Step } from "../src/app/run-step.ts";
+import { runStep, VerificationFailedError, StepTimeoutError, type RunStepDeps, type Step } from "../src/app/run-step.ts";
+import { RunBudget, RunBudgetExceededError } from "../src/domain/run-budget.ts";
 import type { AgentPort } from "../src/ports/agent.ts";
 import { NoChangesToCommitError, type GitPort } from "../src/ports/git.ts";
 import type { ProgressEvent } from "../src/ports/progress.ts";
@@ -277,6 +278,101 @@ describe("runStep commit-scope warning", () => {
     };
     const result = await runStep(deps(new FakeAgent(fakeResult()), tracking), scopedStep);
     expect(result.commit).toBe("a".repeat(40)); // step still succeeds
+  });
+});
+
+describe("runStep step timeout / kill", () => {
+  // A controllable deadline: records start/stop and lets the test fire expiry by
+  // hand, so the timeout path is exercised without any real timer.
+  class FakeDeadline {
+    started = false;
+    stopped = false;
+    private onExpire?: () => void;
+    constructor(onExpire: () => void) {
+      this.onExpire = onExpire;
+    }
+    start(): void {
+      this.started = true;
+    }
+    stop(): void {
+      this.stopped = true;
+    }
+    fire(): void {
+      this.onExpire?.();
+    }
+  }
+
+  // An agent that never settles on its own — only when its abort signal fires.
+  function abortableAgent(seen: { signal?: AbortSignal }): AgentPort {
+    return {
+      run: (_spec, _onActivity, signal) => {
+        seen.signal = signal;
+        return new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("process killed")));
+        });
+      },
+    };
+  }
+
+  test("fires the deadline → aborts the agent and throws StepTimeoutError", async () => {
+    const seen: { signal?: AbortSignal } = {};
+    let deadline: FakeDeadline | undefined;
+    const promise = runStep(
+      {
+        agent: abortableAgent(seen),
+        git: new FakeGit(),
+        deadline: (onExpire) => (deadline = new FakeDeadline(onExpire)),
+      },
+      baseStep,
+    );
+    deadline!.fire(); // simulate the step timing out
+    await expect(promise).rejects.toBeInstanceOf(StepTimeoutError);
+    expect(seen.signal?.aborted).toBe(true); // the process was signalled to die
+    expect(deadline!.started).toBe(true);
+    expect(deadline!.stopped).toBe(true); // deadline cleaned up
+  });
+
+  test("the StepTimeoutError names the issue and stage", async () => {
+    const seen: { signal?: AbortSignal } = {};
+    let deadline: FakeDeadline | undefined;
+    const promise = runStep(
+      { agent: abortableAgent(seen), git: new FakeGit(), deadline: (oe) => (deadline = new FakeDeadline(oe)) },
+      baseStep,
+    );
+    deadline!.fire();
+    await expect(promise).rejects.toThrow(/billing-02.*stage-1|stage-1.*billing-02/s);
+  });
+
+  test("a step that finishes before the deadline does not time out, and stops the deadline", async () => {
+    let deadline: FakeDeadline | undefined;
+    const result = await runStep(
+      {
+        agent: new FakeAgent(fakeResult()),
+        git: new FakeGit(),
+        deadline: (onExpire) => (deadline = new FakeDeadline(onExpire)),
+      },
+      baseStep,
+    );
+    expect(result.commit).toBe("a".repeat(40));
+    expect(deadline!.stopped).toBe(true); // cleaned up even on the happy path
+  });
+});
+
+describe("runStep run budget", () => {
+  test("checks the budget before running the agent; a breach throws and the agent never runs", async () => {
+    let ran = false;
+    const agent: AgentPort = { run: () => { ran = true; return Promise.resolve(fakeResult()); } };
+    const budget = { check: () => { throw new RunBudgetExceededError("step count 5 exceeds maxSteps 4"); } };
+    await expect(runStep({ agent, git: new FakeGit(), budget }, baseStep)).rejects.toBeInstanceOf(
+      RunBudgetExceededError,
+    );
+    expect(ran).toBe(false); // budget gates the step BEFORE the agent runs
+  });
+
+  test("a within-budget step runs normally", async () => {
+    const budget = new RunBudget({ runBudgetMs: 1_000_000, maxSteps: 100 }, () => 0);
+    const result = await runStep({ agent: new FakeAgent(fakeResult()), git: new FakeGit(), budget }, baseStep);
+    expect(result.commit).toBe("a".repeat(40));
   });
 });
 
