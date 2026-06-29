@@ -21,6 +21,13 @@ The orchestrated skills are **vendored** into this repo under [`skills/`](skills
 
 Early development. Building the core step-execution primitive first (sequential, single-issue), parallel multi-issue later.
 
+## Try it
+
+New to diablo? [`docs/tutorial.md`](docs/tutorial.md) is a step-by-step,
+follow-along guide that runs diablo end to end on a small toy project (a Roman
+numeral converter) — init, plan, implement, verify, integrate. The toy
+requirement it uses lives in [`TOYPROJECT.md`](TOYPROJECT.md).
+
 ## Model tiers
 
 | Tier         | Model               | Thinking | Used for                                                          |
