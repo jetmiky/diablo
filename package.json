@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "check": "bun test && tsc --noEmit",
     "build": "rm -rf dist && bun build src/cli/main.ts --target node --format esm --outdir dist && tsc --emitDeclarationOnly",
+    "release:local": "bash scripts/release-local.sh",
     "prepare": "husky"
   },
   "keywords": [

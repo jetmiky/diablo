@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.log
+*.tgz
 .DS_Store
 
 # diablo runtime state (machine-managed, never hand-edited)
