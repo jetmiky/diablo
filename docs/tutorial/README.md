@@ -7,10 +7,10 @@ stage, and hand you the result as commits on an isolated branch.
 
 There are **two ways in**, and this guide covers both:
 
-| Path | Start from | Best when you want to see… |
-| ---- | ---------- | -------------------------- |
-| **A — Run a ready ticket** | [`toy-project.md`](toy-project.md) (a matured requirement) | the core engine fast: plan → implement → verify → integrate |
-| **B — Intake from a rough idea** | [`toy-idea.md`](toy-idea.md) (a few vague bullets) | the *full* workflow: an interactive interview that builds the ticket for you, then runs it |
+| Path                             | Start from                                                 | Best when you want to see…                                                                 |
+| -------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **A — Run a ready ticket**       | [`toy-project.md`](toy-project.md) (a matured requirement) | the core engine fast: plan → implement → verify → integrate                                |
+| **B — Intake from a rough idea** | [`toy-idea.md`](toy-idea.md) (a few vague bullets)         | the _full_ workflow: an interactive interview that builds the ticket for you, then runs it |
 
 Both paths converge on the same `diablo run` and produce the same library. If
 this is your first time, do **Path A** — it's the quickest reproducible win.
@@ -24,8 +24,10 @@ Come back for **Path B** when you want the discussion-first experience.
 ## What you'll learn
 
 - How `diablo init` scaffolds a project
-- *(Path B)* How `diablo intake` turns a fuzzy idea into a PRD and tracked issues
+- _(Path B)_ How `diablo intake` turns a fuzzy idea into a PRD and tracked issues
   through an interactive grilling session
+- How `diablo plan` lets you negotiate and freeze the plan before any build runs —
+  and when it's perfectly fine to skip it
 - How diablo reads a ticket from `.scratch/<issue>/` and freezes a plan
 - How the `design → worker → verifier` pipeline runs each stage
 - How the `gate` config inserts a human approval checkpoint (we'll use it)
@@ -37,17 +39,17 @@ Come back for **Path B** when you want the discussion-first experience.
 
 Check each of these before you start:
 
-| Requirement          | Check           | Expected                   |
-| -------------------- | --------------- | -------------------------- |
-| **Node** ≥ 22 or Bun | `node --version` / `bun --version` | a version prints |
-| **Pi coding agent**  | `which pi`      | a path prints (any manager) |
-| **git**              | `git --version` | a version prints           |
-| **Pi is configured** | `pi --version`  | runs without an auth error |
+| Requirement          | Check                              | Expected                    |
+| -------------------- | ---------------------------------- | --------------------------- |
+| **Node** ≥ 22 or Bun | `node --version` / `bun --version` | a version prints            |
+| **Pi coding agent**  | `which pi`                         | a path prints (any manager) |
+| **git**              | `git --version`                    | a version prints            |
+| **Pi is configured** | `pi --version`                     | runs without an auth error  |
 
 diablo spawns `pi` for every agent step, resolving it from your `PATH` — so it
 works whether you installed Pi via npm, bun, or pnpm, as long as `which pi`
 succeeds. (If `pi` lives somewhere not on `PATH`, set `DIABLO_PI_BIN` to its
-absolute path instead — see the README's *Requirements* section.) If Pi isn't
+absolute path instead — see the README's _Requirements_ section.) If Pi isn't
 installed or its provider/credentials aren't set up, the run will fail at the
 first step — sort that out first.
 
@@ -239,11 +241,11 @@ talks to you in the terminal. When it asks what you want to build, paste the
 bullets from `toy-idea.md` as your opening answer, then let it drive. It will
 press you on exactly the things the idea left vague:
 
-- *What number range?* → you settle on `1`–`3999`
-- *Reject "IIII" as well as "banana"?* → yes, only canonical forms
-- *What error types?* → `RangeError` for out-of-range, a plain `Error` for
+- _What number range?_ → you settle on `1`–`3999`
+- _Reject "IIII" as well as "banana"?_ → yes, only canonical forms
+- _What error types?_ → `RangeError` for out-of-range, a plain `Error` for
   invalid numerals
-- *Case-insensitive input?* → yes
+- _Case-insensitive input?_ → yes
 
 The flow runs in this order:
 
@@ -284,7 +286,59 @@ ls .scratch/roman-converter/
 
 ---
 
-## Step 4 — Turn on the approval gate (so you can watch each stage)
+## Step 4 — Negotiate the plan with `diablo plan` _(optional — you can skip straight to `diablo run`)_
+
+> **You can skip this entire step.** `diablo run roman-converter` works on its own:
+> with no frozen plan it auto-plans non-interactively and goes straight into the
+> build. For a small, well-understood ticket like the Roman converter, that's the
+> fast, sensible path — go to **Step 5** and you've lost nothing. The intake
+> output (Path B) flows directly into `run` the same way; `plan` never sits
+> _between_ them as a requirement.
+>
+> Reach for `diablo plan` when the work is bigger or fuzzier and you want to
+> **shape the approach before any expensive build runs** — planning is cheap to
+> discuss, a multi-stage build is expensive to undo. This step shows it once so
+> you know it's there.
+
+`diablo plan` opens a foreground negotiation with the planner:
+
+```bash
+diablo plan roman-converter
+```
+
+1. **Propose + self-grill.** The planner writes a _proposed_ staged plan and, in
+   its reply, summarizes the approach, what it deliberately is NOT doing, and the
+   risks/assumptions it surfaces itself — so you're not the only critic.
+2. **Negotiate.** It then waits for you. Type a challenge in plain words
+   ("why split numeral mapping across two stages?") and the planner **defends or
+   revises**: a challenge is a hypothesis to weigh, not an order to obey, so if
+   you're wrong it'll say so and explain why, citing the ticket — and revise only
+   when you've found a real gap. Go a few rounds until you're satisfied.
+3. **Freeze.** Type the bare word `approve` to freeze. The planner rewrites a
+   clean plan plus a `## Decisions & rationale` section capturing the _why_, and
+   the issue's status becomes `planned`. (Type `abort` to walk away without
+   freezing.)
+
+```
+✅ plan for roman-converter frozen. Next: diablo run roman-converter
+```
+
+Now `diablo run roman-converter` will execute **that** frozen plan instead of
+auto-planning. The teeth: once a plan exists, `run` will only execute it if you
+approved it — a half-negotiated _draft_ (you ran `plan` but quit before
+`approve`) is **rejected** by `run` until you finish approving it or delete the
+draft. That's the guarantee — the expensive build never proceeds on a plan you
+didn't sign off on.
+
+> **No-argument shortcut.** Run `diablo plan` (or `diablo run`) with no issue and
+> diablo opens an interactive picker of the issues under `.scratch/`, each tagged
+> with its status (`open`, `planned`, `done`, …) — handy once you have several.
+> In a non-interactive shell it just asks you to name the issue rather than
+> hanging.
+
+---
+
+## Step 5 — Turn on the approval gate (so you can watch each stage)
 
 By default `gate` is `"none"` — diablo runs fully autonomous (AFK) and won't
 pause. For this tutorial we want to **see** each stage as it passes, so switch
@@ -319,7 +373,7 @@ verification.
 
 ---
 
-## Step 5 — Run it
+## Step 6 — Run it
 
 ```bash
 diablo run roman-converter
@@ -369,7 +423,7 @@ handoff note.
 
 ---
 
-## Step 6 — Inspect the result
+## Step 7 — Inspect the result
 
 When the run completes you'll see:
 
@@ -403,7 +457,7 @@ cd -
 
 ---
 
-## Step 7 — Integrate (or throw it away)
+## Step 8 — Integrate (or throw it away)
 
 If you're happy with it, merge the branch:
 
@@ -432,28 +486,28 @@ rm -rf ~/playground/roman-toy
 
 Once the basic run works, experiment:
 
-| Try this                      | How                                                          | What changes                                                          |
-| ----------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------- |
-| **The other path**           | did Path A? do Path B (or vice versa) on a fresh issue name  | feel the difference between a ready ticket and an intake interview     |
-| **Fully autonomous**          | set `"gate": "none"` in `diablo.config.json`                 | no pauses — diablo runs start to finish                               |
-| **Auto-merge on pass**        | set `"integration.autoMerge": true`                          | a clean run merges into `main` automatically                          |
-| **Cheaper/faster run**        | `diablo run roman-converter --worker-model claude-haiku-4.5` | a CLI flag overrides the config for one run                           |
-| **Refactor flow**             | `diablo refactor <area>`                                     | same pipeline, but the planner produces a refactor plan               |
+| Try this               | How                                                          | What changes                                                       |
+| ---------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------ |
+| **The other path**     | did Path A? do Path B (or vice versa) on a fresh issue name  | feel the difference between a ready ticket and an intake interview |
+| **Fully autonomous**   | set `"gate": "none"` in `diablo.config.json`                 | no pauses — diablo runs start to finish                            |
+| **Auto-merge on pass** | set `"integration.autoMerge": true`                          | a clean run merges into `main` automatically                       |
+| **Cheaper/faster run** | `diablo run roman-converter --worker-model claude-haiku-4.5` | a CLI flag overrides the config for one run                        |
+| **Refactor flow**      | `diablo refactor <area>`                                     | same pipeline, but the planner produces a refactor plan            |
 
 ---
 
 ## Troubleshooting
 
-| Symptom                               | Likely cause                         | Fix                                                                   |
-| ------------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
-| First agent step fails immediately    | Pi not configured (provider/auth)    | run `pi --version` and set up Pi first                                |
-| `spawn pi ENOENT`                     | `pi` not on `PATH` in this shell     | ensure `which pi` succeeds, or set `DIABLO_PI_BIN` to its absolute path |
+| Symptom                               | Likely cause                                | Fix                                                                                                        |
+| ------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| First agent step fails immediately    | Pi not configured (provider/auth)           | run `pi --version` and set up Pi first                                                                     |
+| `spawn pi ENOENT`                     | `pi` not on `PATH` in this shell            | ensure `which pi` succeeds, or set `DIABLO_PI_BIN` to its absolute path                                    |
 | Skill setup / intake shows no prompts | running an old build (pre-`runInteractive`) | the interactive sessions inherit your terminal — rebuild/reinstall diablo so you're on the current version |
-| `exit code 127` on commit             | bun not on PATH for the husky hook   | `export PATH="$HOME/.bun/bin:$PATH"` before running                   |
-| `Vendored skills directory not found` | diablo invoked by a broken path      | use the absolute path to `src/cli/main.ts` from step 0                |
-| Plan file not written                 | planner step didn't produce the plan | check the ticket has clear "What to build" + acceptance criteria      |
-| Run halted at a gate                  | you (or a bare Enter) declined       | re-run `diablo run roman-converter` — it resumes from the frozen plan |
-| Run halted on `FAIL [plan]`           | the frozen plan can't be satisfied   | read the verifier feedback; fix the ticket and start fresh            |
+| `exit code 127` on commit             | bun not on PATH for the husky hook          | `export PATH="$HOME/.bun/bin:$PATH"` before running                                                        |
+| `Vendored skills directory not found` | diablo invoked by a broken path             | use the absolute path to `src/cli/main.ts` from step 0                                                     |
+| Plan file not written                 | planner step didn't produce the plan        | check the ticket has clear "What to build" + acceptance criteria                                           |
+| Run halted at a gate                  | you (or a bare Enter) declined              | re-run `diablo run roman-converter` — it resumes from the frozen plan                                      |
+| Run halted on `FAIL [plan]`           | the frozen plan can't be satisfied          | read the verifier feedback; fix the ticket and start fresh                                                 |
 
 > **Resuming:** `diablo run` is resume-aware. If a run halts, just run it again —
 > an existing frozen plan and worktree are reused, so it picks up where it left
