@@ -30,6 +30,9 @@ class FakePrompt implements PromptPort {
     this.asked.push(q);
     return Promise.resolve(this.answer);
   }
+  select(_q: string, options: readonly string[]): Promise<string> {
+    return Promise.resolve(options[0]!);
+  }
 }
 
 function makeDeps(fs: FsPort, prompt: PromptPort, approve: boolean) {

@@ -3,6 +3,7 @@ import { initDiablo, type InitDeps } from "../src/app/init-diablo.ts";
 import { parseConfig } from "../src/domain/config.ts";
 import type { FsPort } from "../src/ports/fs.ts";
 import type { PromptPort } from "../src/ports/prompt.ts";
+import type { PackageManager } from "../src/domain/package-manager.ts";
 
 class FakeFs implements FsPort {
   files = new Map<string, string>();
@@ -25,12 +26,25 @@ class FakeFs implements FsPort {
   }
 }
 
+/**
+ * A scripted prompt: `confirm` returns a canned boolean; `select` returns a
+ * canned choice. Both record what they were asked so tests can assert on the
+ * prompt copy.
+ */
 class FakePrompt implements PromptPort {
-  constructor(private answer: boolean) {}
   asked: string[] = [];
+  selectAsked: { question: string; options: readonly string[] }[] = [];
+  constructor(
+    private readonly answer: boolean,
+    private readonly choice: string = "skip",
+  ) {}
   confirm(question: string): Promise<boolean> {
     this.asked.push(question);
     return Promise.resolve(this.answer);
+  }
+  select(question: string, options: readonly string[]): Promise<string> {
+    this.selectAsked.push({ question, options });
+    return Promise.resolve(this.choice);
   }
 }
 
@@ -38,17 +52,22 @@ const CONFIG_PATH = "/proj/diablo.config.json";
 
 function makeDeps(fs: FsPort, prompt: PromptPort) {
   const calls: string[] = [];
+  const installed: PackageManager[] = [];
   const deps: InitDeps = {
     fs,
     prompt,
     setupSkills: async () => {
       calls.push("setup-skills");
     },
-    bootstrap: async () => {
-      calls.push("bootstrap");
+    gitInit: async () => {
+      calls.push("git-init");
+    },
+    installTooling: async (pm: PackageManager) => {
+      calls.push("install-tooling");
+      installed.push(pm);
     },
   };
-  return { deps, calls };
+  return { deps, calls, installed };
 }
 
 describe("initDiablo", () => {
@@ -58,7 +77,6 @@ describe("initDiablo", () => {
     await initDiablo(deps, { configPath: CONFIG_PATH });
 
     expect(fs.files.has(CONFIG_PATH)).toBe(true);
-    // The scaffold must be valid config that parses back to defaults.
     const parsed = parseConfig(fs.files.get(CONFIG_PATH)!);
     expect(parsed.gate).toBe("approval");
     expect(parsed.integration.autoMerge).toBe(false);
@@ -70,7 +88,7 @@ describe("initDiablo", () => {
     const { deps } = makeDeps(fs, new FakePrompt(false));
     await initDiablo(deps, { configPath: CONFIG_PATH });
 
-    expect(fs.files.get(CONFIG_PATH)).toBe(existing); // untouched
+    expect(fs.files.get(CONFIG_PATH)).toBe(existing);
     expect(fs.writes).not.toContain(CONFIG_PATH);
   });
 
@@ -80,22 +98,54 @@ describe("initDiablo", () => {
     expect(calls).toContain("setup-skills");
   });
 
-  test("asks (opt-in) whether to bootstrap git/husky/commitlint", async () => {
+  test("asks (opt-in) whether to bootstrap tooling", async () => {
     const prompt = new FakePrompt(false);
     const { deps } = makeDeps(new FakeFs(), prompt);
     await initDiablo(deps, { configPath: CONFIG_PATH });
     expect(prompt.asked.join(" ")).toMatch(/husky|commitlint|bootstrap|git/i);
   });
 
-  test("bootstraps tooling when the user accepts", async () => {
-    const { deps, calls } = makeDeps(new FakeFs(), new FakePrompt(true));
-    await initDiablo(deps, { configPath: CONFIG_PATH });
-    expect(calls).toContain("bootstrap");
-  });
-
-  test("skips bootstrapping silently when the user declines", async () => {
+  test("does nothing further when the user declines bootstrap", async () => {
     const { deps, calls } = makeDeps(new FakeFs(), new FakePrompt(false));
     await initDiablo(deps, { configPath: CONFIG_PATH });
-    expect(calls).not.toContain("bootstrap");
+    expect(calls).not.toContain("git-init");
+    expect(calls).not.toContain("install-tooling");
+  });
+
+  test("after opting in, prompts to choose a package manager or skip", async () => {
+    const prompt = new FakePrompt(true, "skip");
+    const { deps } = makeDeps(new FakeFs(), prompt);
+    await initDiablo(deps, { configPath: CONFIG_PATH });
+
+    expect(prompt.selectAsked).toHaveLength(1);
+    expect(prompt.selectAsked[0]!.options).toEqual(["bun", "npm", "pnpm", "skip"]);
+  });
+
+  test("git init runs for a real package-manager choice, then installs tooling with it", async () => {
+    const prompt = new FakePrompt(true, "pnpm");
+    const { deps, calls, installed } = makeDeps(new FakeFs(), prompt);
+    await initDiablo(deps, { configPath: CONFIG_PATH });
+
+    expect(calls).toContain("git-init");
+    expect(calls).toContain("install-tooling");
+    expect(installed).toEqual(["pnpm"]);
+  });
+
+  test("'skip' runs git init but installs NO tooling (non-Node escape hatch)", async () => {
+    const prompt = new FakePrompt(true, "skip");
+    const { deps, calls, installed } = makeDeps(new FakeFs(), prompt);
+    await initDiablo(deps, { configPath: CONFIG_PATH });
+
+    expect(calls).toContain("git-init");
+    expect(calls).not.toContain("install-tooling");
+    expect(installed).toEqual([]);
+  });
+
+  test("git init runs independent of which package manager is chosen", async () => {
+    for (const pm of ["bun", "npm", "pnpm", "skip"]) {
+      const { deps, calls } = makeDeps(new FakeFs(), new FakePrompt(true, pm));
+      await initDiablo(deps, { configPath: CONFIG_PATH });
+      expect(calls).toContain("git-init");
+    }
   });
 });

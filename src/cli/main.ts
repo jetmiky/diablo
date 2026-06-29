@@ -19,6 +19,7 @@ import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { resolveModels, type ConfigModels } from "../domain/config.ts";
+import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { StdoutProgress } from "../adapters/stdout-progress.ts";
 import { ProgressMdAdapter } from "../adapters/progress-md.ts";
@@ -230,7 +231,8 @@ async function main(argv: string[]): Promise<number> {
           fs: new NodeFs(),
           prompt: new StdinPrompt(),
           setupSkills: () => runSetupSkills(piBinary, runner, repoRoot),
-          bootstrap: () => bootstrapTooling(runner, repoRoot),
+          gitInit: () => gitInit(runner, repoRoot),
+          installTooling: (pm) => installTooling(runner, repoRoot, pm),
         },
         { configPath },
       );
@@ -331,23 +333,31 @@ async function runSetupSkills(
 }
 
 /**
- * Bootstraps Node-based dev tooling: git init (if not already a repo), husky,
- * and commitlint. Best-effort and idempotent; invoked only when the user
- * opted in during init. Errors surface to the caller so a failed bootstrap is
- * visible rather than silently swallowed.
+ * Initialises a git repo if the directory is not already one. Idempotent and
+ * independent of the package-manager choice — every real bootstrap starts a
+ * repo so husky's hooks (when installed) have somewhere to live.
  */
-async function bootstrapTooling(runner: NodeProcessRunner, repoRoot: string): Promise<void> {
-  process.stdout.write("\nBootstrapping git/husky/commitlint...\n");
-  const isRepo = existsSync(`${repoRoot}/.git`);
-  if (!isRepo) {
-    await runner.run("git", ["init"], repoRoot);
-  }
-  await runner.run(
-    "npm",
-    ["install", "--save-dev", "husky", "@commitlint/cli", "@commitlint/config-conventional"],
-    repoRoot,
-  );
-  await runner.run("npx", ["husky", "init"], repoRoot);
+async function gitInit(runner: NodeProcessRunner, repoRoot: string): Promise<void> {
+  if (existsSync(`${repoRoot}/.git`)) return;
+  process.stdout.write("\nInitialising git repository...\n");
+  await runner.run("git", ["init"], repoRoot);
+}
+
+/**
+ * Installs and initialises husky + commitlint using the chosen package manager.
+ * The command pair is computed by the pure `bootstrapCommands` mapping; this
+ * function only runs them. Invoked only for a real package-manager choice — the
+ * "skip" path never reaches here (see init-diablo's bootstrap policy).
+ */
+async function installTooling(
+  runner: NodeProcessRunner,
+  repoRoot: string,
+  pm: PackageManager,
+): Promise<void> {
+  process.stdout.write(`\nBootstrapping husky/commitlint with ${pm}...\n`);
+  const { install, huskyInit } = bootstrapCommands(pm);
+  await runner.run(install.cmd, install.args, repoRoot);
+  await runner.run(huskyInit.cmd, huskyInit.args, repoRoot);
 }
 
 /**

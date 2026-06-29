@@ -1,7 +1,9 @@
 /**
- * StdinPrompt is the real PromptPort: it prints a yes/no question and reads the
- * answer from stdin. Anything not starting with "y" (case-insensitive) is a
- * decline, so a bare Enter is a safe default-no — matching StdinGate's posture.
+ * StdinPrompt is the real PromptPort: it prints a question and reads the answer
+ * from stdin. `confirm` treats anything not starting with "y" as a decline, so a
+ * bare Enter is a safe default-no — matching StdinGate's posture. `select`
+ * prints a numbered menu and reads a choice; a bare Enter (or any unrecognised
+ * input) selects the first option, which callers pass as the safe default.
  *
  * Used only by `diablo init`; validated by the live init path, not unit tests
  * (the decision logic lives in init-diablo, tested against a fake prompt).
@@ -13,6 +15,20 @@ export class StdinPrompt implements PromptPort {
     process.stdout.write(`${question} [y/N] `);
     const answer = await readLine();
     return answer.trim().toLowerCase().startsWith("y");
+  }
+
+  async select(question: string, options: readonly string[]): Promise<string> {
+    if (options.length === 0) throw new Error("select requires at least one option");
+    const menu = options.map((opt, i) => `  ${i + 1}) ${opt}`).join("\n");
+    process.stdout.write(`${question}\n${menu}\n[1-${options.length}, default 1] `);
+    const raw = (await readLine()).trim();
+
+    if (raw === "") return options[0]!;
+    // Accept either the 1-based number or the option's literal text.
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 1 && n <= options.length) return options[n - 1]!;
+    const match = options.find((opt) => opt.toLowerCase() === raw.toLowerCase());
+    return match ?? options[0]!;
   }
 }
 

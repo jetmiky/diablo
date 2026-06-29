@@ -42,8 +42,12 @@ tier.
 ## Configure
 
 `diablo init` scaffolds a minimal `diablo.config.json`, runs the skill setup, and
-(opt-in) offers to bootstrap `git`/`husky`/`commitlint`. Config is optional —
-diablo runs with built-in defaults when no file is present.
+(opt-in) offers to bootstrap tooling. When you opt in, it asks which package
+manager to use — **bun**, **npm**, or **pnpm** — and runs `git init` (if needed)
+plus installs husky/commitlint with that manager. Choosing **skip** runs `git
+init` only and installs no Node tooling — the escape hatch for non-Node projects
+(Go, Rust, Python), since husky/commitlint require Node regardless of manager.
+Config is optional — diablo runs with built-in defaults when no file is present.
 
 ```jsonc
 {
