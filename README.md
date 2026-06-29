@@ -9,13 +9,13 @@ Diablo is **not the brain** — your skills are. Diablo is the conductor: it dec
 - **Skill-driven** — your skills provide the procedures (grilling, PRD, issues, TDD, handoff, refactor). Diablo injects them into Pi via `@file` references.
 - **Central, not a swarm** — one conductor dispatches Pi runs synchronously. No daemon, no message bus, no scheduler.
 - **Git as the event store** — work transfers between steps as commits, so every step is durable and resumable.
-- **Human gates** — interactive steps (grilling) hand you the keyboard; approval steps pause for `y/N`; AFK steps run headless.
+- **Human gates** — three distinct ones, never conflated: **intake** (idea → spec, front of the pipeline), **plan negotiation** (spec → frozen plan, the middle gate), and per-commit **approval** (during a run). Interactive steps hand you the keyboard; AFK steps run headless.
 
 ## Credits
 
 Diablo conducts a set of engineering skills authored by **Matt Pocock** — [github.com/mattpocock/skills](https://github.com/mattpocock/skills). The skills (`master-plan`, `tdd`, `grill-with-docs`, `to-prd`, `to-issues`, `handoff`, and others) are the "brain" diablo orchestrates; diablo itself is only the conductor. All credit for the skill methodology belongs to the original author.
 
-The orchestrated skills are **vendored** into this repo under [`skills/`](skills/) so the engine and the skills it drives evolve in lockstep (the plan parser is a strict contract on the master-plan skill's output) and a fresh clone is self-contained. Those vendored copies are derivative configurations adapted for diablo's pipeline; upstream remains the source of truth for the methodology. See [`skills/UPSTREAM.md`](skills/UPSTREAM.md) for provenance and the vendored set.
+The orchestrated skills are **vendored** into this repo under [`skills/`](skills/) so the engine and the skills it drives evolve in lockstep (the plan parser is a strict contract on the master-plan skill's output) and a fresh clone is self-contained. Those vendored copies are **verbatim, unmodified copies** of the upstream skills, not derivative configurations — updating from upstream is a clean re-copy, and what runs is exactly what upstream published. See [`skills/UPSTREAM.md`](skills/UPSTREAM.md) for provenance and the vendored set.
 
 ## Status
 
@@ -267,6 +267,81 @@ cannot be AFK — so it is a separate command:
    declining stops cleanly with the PRD saved and no issues written.
 5. **to-issues** — decomposes the approved PRD into tracked issues under
    `.scratch/<feature>/`, which `diablo run` then picks up.
+
+## Plan negotiation
+
+`diablo plan <issue>` is the middle gate — between a tracked issue (the spec) and
+an AFK `run` (the implementation). The most expensive, least-reversible part of
+the pipeline is a full multi-stage build; planning is cheap to discuss. So the
+plan becomes a negotiated artifact you shape WITH the planner before it is
+frozen, rather than something `run` writes silently and immediately executes.
+
+1. **Propose + self-grill** — the planner writes a proposed staged plan and, in
+   its reply, summarizes the approach, what it deliberately is NOT doing, and the
+   risks/assumptions/open-questions it surfaces itself. You aren't the sole critic.
+2. **Negotiate** — you challenge; the planner **defends or revises**. A challenge
+   is treated as a hypothesis to evaluate, not an order to obey: if it's
+   technically wrong or would damage the design, the planner says so and explains
+   why, citing the spec or the code. It revises only when a challenge exposes a
+   real gap. No reflexive agreement (the same anti-sycophancy posture the verifier
+   verdict has).
+3. **Freeze** — only on an explicit `approve` (type the bare word). The planner
+   rewrites a clean frozen plan plus a `## Decisions & rationale` section
+   distilling the _why_ from the negotiation, and the issue status becomes
+   `planned`. `abort` cancels without freezing.
+
+The negotiation is a single resumed Pi session (the planner accumulates the full
+exchange), foreground and interactive — this is NOT the AFK `run`.
+
+**How `run` relates to a plan:**
+
+- A **frozen** plan (status `planned`) — `run` executes it.
+- A **draft** plan (a plan file exists but was never approved) — `run` **rejects**
+  it. This is where the gate gets its teeth: the expensive build never proceeds on
+  a plan you didn't approve.
+- **No plan at all** — `run` auto-plans non-interactively then executes (the
+  full-AFK escape hatch for trivial issues you want to fire-and-forget).
+
+`diablo plan` invoked with no issue opens an interactive selector of the issues
+discovered under `.scratch/`, each tagged with its status. The same selector
+backs a bare `diablo run`. In a non-interactive context (backgrounded, piped) the
+selector cannot run, so it fails fast asking for an explicit issue name rather
+than hanging — so an AFK `run` never blocks on input that will never arrive.
+
+## Issue status (lifecycle) vs triage label
+
+Two **orthogonal** axes track an issue — never conflate them:
+
+| | Triage label | Issue status (lifecycle) |
+| --- | --- | --- |
+| Values | `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` | `open`, `planned`, `in-progress`, `needs-human`, `done` |
+| Means | should a human/agent pick this up? | where is it in the run pipeline? |
+| Set by | a human, by hand | diablo, automatically |
+| Lives in | the `Status:` line **inside** the issue `.md` (the vendored Matt Pocock skill's format, kept verbatim) | `.diablo/<issue>/state.json` (gitignored runtime state) |
+
+Keeping the lifecycle in `state.json` rather than the `.md` is deliberate: it
+never clobbers the human triage label. Diablo sets the lifecycle status as it
+runs (`plan` → `planned`, `run` start → `in-progress`, the done gate → `done` or
+`needs-human`), and the selector reads it to badge each issue. Because
+`integration.autoMerge` defaults off, an issue can be `done` yet unmerged —
+shown as `done (unmerged)`, and the condition `diablo plan` warns about on a
+later issue.
+
+## The done gate
+
+A run finishing PASS is necessary but not sufficient — the issue's acceptance
+criteria must actually be **proven**, not assumed. The final (planner-tier)
+verification maps each acceptance criterion to concrete evidence (a test name,
+code path, or command output) as a `CRITERIA:` checklist. Then, mechanically:
+
+- every criterion checked **AND** `VERDICT: PASS` → status `done` (and the issue
+  file's acceptance boxes are flipped to `[x]`);
+- any criterion unproven, or the verifier didn't address them all → status
+  `needs-human`, listing exactly what is unmet. Never a silent done.
+
+An issue with no acceptance criteria falls back to a weak gate (PASS alone
+suffices) with a warning — done means proven, but a ticket that specified nothing
+to prove can't be held to criteria it doesn't have.
 
 ## Run vs refactor
 
