@@ -22,6 +22,7 @@ import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
 import { resolveModels, type ConfigModels, type DiabloConfig } from "../domain/config.ts";
 import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
+import { huskyArtifacts } from "../domain/husky-hooks.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { StdoutProgress } from "../adapters/stdout-progress.ts";
 import { ProgressMdAdapter } from "../adapters/progress-md.ts";
@@ -657,10 +658,12 @@ async function hasCommits(runner: NodeProcessRunner, repoRoot: string): Promise<
 }
 
 /**
- * Installs and initialises husky + commitlint using the chosen package manager.
- * The command pair is computed by the pure `bootstrapCommands` mapping; this
- * function only runs them. Invoked only for a real package-manager choice — the
- * "skip" path never reaches here (see init-diablo's bootstrap policy).
+ * Installs and initialises husky + commitlint using the chosen package manager,
+ * then OVERWRITES husky's defaults with diablo's own hook artifacts. `husky init`
+ * writes a `bun test`/`npm test` pre-commit that fails the first commit in a
+ * test-less scaffold (stalling the AFK loop) and never wires commitlint; this
+ * replaces the pre-commit with a no-test hook, adds the commit-msg commitlint
+ * hook, and scaffolds commitlint.config.js. See domain/husky-hooks.ts.
  */
 async function installTooling(
   runner: NodeProcessRunner,
@@ -671,6 +674,13 @@ async function installTooling(
   const { install, huskyInit } = bootstrapCommands(pm);
   await runner.run(install.cmd, install.args, repoRoot);
   await runner.run(huskyInit.cmd, huskyInit.args, repoRoot);
+
+  // Overwrite husky's test-running default and wire commitlint (which husky
+  // init never does). Written AFTER init so .husky/ exists and our files win.
+  const fs = new NodeFs();
+  for (const artifact of huskyArtifacts(pm)) {
+    await fs.write(`${repoRoot}/${artifact.path}`, artifact.content);
+  }
 }
 
 /**
