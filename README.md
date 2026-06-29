@@ -90,6 +90,23 @@ interface in real code rather than guessing at plan time. The final
 whole-feature judgment), while mid-pipeline verifiers stay cheap on the verifier
 tier.
 
+> **Cross-tier review (cost/quality knob).** By default the worker and the
+> per-stage verifier are the same class (`claude-sonnet-4.5`), so each stage is
+> reviewed by a peer of the model that wrote it. The deterministic gate (see
+> [the done gate](#the-done-gate) and ADR 0001) already makes typecheck/tests a
+> _measured_ fact, so what the verifier still judges is the softer "do the
+> acceptance criteria hold" call. If you want stronger per-stage review and
+> accept the extra cost on the most frequent step in a run, set the verifier a
+> tier above the worker:
+>
+> ```bash
+> diablo run <issue> --verifier-model claude-opus-4.8
+> ```
+>
+> or persist it as `"models": { "verifier": "claude-opus-4.8" }` in
+> `diablo.config.json`. The default stays cheap on purpose (ADR 0003); this is an
+> opt-in, not a recommendation for every run.
+
 ## Configure
 
 `diablo init` scaffolds a minimal `diablo.config.json`, runs the skill setup, and
