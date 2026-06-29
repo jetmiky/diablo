@@ -16,4 +16,9 @@ export interface PromptPort {
    * option is the default (a bare Enter selects it).
    */
   select(question: string, options: readonly string[]): Promise<string>;
+  /**
+   * Presents a free-text question and returns the raw trimmed line the user
+   * typed. Used by plan negotiation, where the human's challenge is free text.
+   */
+  ask(question: string): Promise<string>;
 }

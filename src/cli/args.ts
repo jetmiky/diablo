@@ -11,7 +11,8 @@ export interface ModelFlagArgs {
 }
 
 export type ParsedArgs =
-  | ({ command: "run"; issue: string } & ModelFlagArgs)
+  | ({ command: "run"; issue?: string } & ModelFlagArgs)
+  | ({ command: "plan"; issue?: string } & ModelFlagArgs)
   | ({ command: "refactor"; area: string } & ModelFlagArgs)
   | { command: "intake"; feature: string }
   | { command: "version" }
@@ -45,12 +46,34 @@ export function parseArgs(argv: string[]): ParsedArgs {
     return { command: "intake", feature };
   }
 
-  if (first === "run" || first === "refactor") {
+  if (first === "run" || first === "plan") {
+    // For run/plan, the issue is optional. If rest[0] looks like a flag, there's no issue.
+    const maybeIssue = rest[0];
+    let issue: string | undefined;
+    let flagsStart = 0;
+
+    if (maybeIssue === undefined || maybeIssue.startsWith("--")) {
+      issue = undefined;
+      flagsStart = 0;
+    } else {
+      issue = maybeIssue;
+      flagsStart = 1;
+    }
+
+    const flags = parseModelFlags(rest.slice(flagsStart));
+    if ("error" in flags) {
+      return { command: "error", message: flags.error };
+    }
+
+    return first === "run"
+      ? { command: "run", issue, ...flags.models }
+      : { command: "plan", issue, ...flags.models };
+  }
+
+  if (first === "refactor") {
     const target = rest[0];
     if (target === undefined) {
-      return first === "run"
-        ? { command: "error", message: "run requires an issue ref: diablo run <issue>" }
-        : { command: "error", message: "refactor requires an area ref: diablo refactor <area>" };
+      return { command: "error", message: "refactor requires an area ref: diablo refactor <area>" };
     }
 
     const flags = parseModelFlags(rest.slice(1));
@@ -58,9 +81,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       return { command: "error", message: flags.error };
     }
 
-    return first === "run"
-      ? { command: "run", issue: target, ...flags.models }
-      : { command: "refactor", area: target, ...flags.models };
+    return { command: "refactor", area: target, ...flags.models };
   }
 
   return { command: "error", message: `unknown command: ${first}` };

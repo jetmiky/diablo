@@ -20,4 +20,11 @@ export interface GitMergePort {
    * an unexpected git failure (not on an ordinary conflict).
    */
   merge(targetBranch: string, branch: string): Promise<MergeResult>;
+
+  /**
+   * Returns true if every commit on `branch` is already contained in
+   * `targetBranch` (i.e., the branch has been merged). Throws on git failure
+   * (e.g., unknown ref).
+   */
+  isMerged(branch: string, targetBranch: string): Promise<boolean>;
 }
