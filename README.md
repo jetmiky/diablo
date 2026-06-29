@@ -28,6 +28,48 @@ follow-along guide that runs diablo end to end on a small toy project (a Roman
 numeral converter) — init, plan, implement, verify, integrate. The toy
 requirement it uses lives in [`TOYPROJECT.md`](TOYPROJECT.md).
 
+## Requirements
+
+diablo is a conductor — it does not contain a model. Every step it runs is a
+[Pi coding agent](https://github.com/earendil-works/pi) invocation, so **Pi must
+be installed and on your `PATH`**, with its provider/credentials configured.
+Node ≥ 22 (or Bun) is needed to run diablo itself.
+
+### How diablo finds the `pi` binary
+
+diablo and Pi are each installed globally however you like — **npm, bun, or
+pnpm** — and each manager drops its global binaries in a _different_ directory:
+
+| Manager | Typical global bin dir                                             |
+| ------- | ------------------------------------------------------------------ |
+| npm     | `$(npm prefix -g)/bin` (e.g. `/usr/local/bin`, or an nvm node dir) |
+| bun     | `~/.bun/bin`                                                       |
+| pnpm    | `~/.local/share/pnpm` (or `$PNPM_HOME`)                            |
+
+To work regardless of how Pi was installed, diablo spawns the agent by the bare
+command name `pi` and lets the OS resolve it against your `PATH` (Node's
+`child_process.spawn` of a slash-less command uses `execvp`, the same lookup a
+shell does). So **the only requirement is that `which pi` succeeds in the
+environment you run diablo from** — a global install via any manager satisfies
+that.
+
+### `DIABLO_PI_BIN` — pointing at a non-PATH install
+
+If your `pi` is not on `PATH` (a one-off build, a pinned version, a sandbox), set
+an explicit absolute path and diablo uses it verbatim:
+
+```bash
+export DIABLO_PI_BIN="/opt/pi/bin/pi"
+diablo run my-issue
+```
+
+Resolution order: `DIABLO_PI_BIN` (if set and non-empty) → otherwise the bare
+name `pi` resolved via `PATH`.
+
+> **Tip:** if you hit `spawn pi ENOENT`, diablo could not find Pi on `PATH`.
+> Either add Pi's global bin dir to `PATH` (e.g. in `~/.bashrc` / `~/.profile`)
+> or set `DIABLO_PI_BIN` to its absolute path.
+
 ## Model tiers
 
 | Tier         | Model               | Thinking | Used for                                                          |
@@ -96,11 +138,11 @@ and the per-tier thinking level (`planner` → high/medium, `worker`/`verifier` 
 medium) at run time. You set _what_ model; the tier table owns _how hard it
 thinks_.
 
-| Value | Implication |
-| ----- | ----------- |
-| omitted (default) | planner `claude-opus-4.8`, worker & verifier `claude-sonnet-4.5` — the cost/quality split the pipeline is tuned for: an expensive brain plans and judges, cheaper hands implement. |
-| a stronger worker (e.g. `claude-opus-4.8`) | higher implementation quality, materially higher cost and latency on the step that runs most often. |
-| a cheaper planner/verifier (e.g. `claude-haiku-4.5`) | faster, cheaper toy/scratch runs; weaker plans and shallower verdicts, so a bad plan or a missed regression is more likely to slip through. |
+| Value                                                | Implication                                                                                                                                                                        |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted (default)                                    | planner `claude-opus-4.8`, worker & verifier `claude-sonnet-4.5` — the cost/quality split the pipeline is tuned for: an expensive brain plans and judges, cheaper hands implement. |
+| a stronger worker (e.g. `claude-opus-4.8`)           | higher implementation quality, materially higher cost and latency on the step that runs most often.                                                                                |
+| a cheaper planner/verifier (e.g. `claude-haiku-4.5`) | faster, cheaper toy/scratch runs; weaker plans and shallower verdicts, so a bad plan or a missed regression is more likely to slip through.                                        |
 
 Precedence (each layer overrides the one before):
 
@@ -121,12 +163,12 @@ for that run only, without editing the file.
 }
 ```
 
-| Field | Values | Implication |
-| ----- | ------ | ----------- |
-| `targetBranch` | any branch name (default `main`) | the work branch is cut FROM this and (if `autoMerge`) merged back INTO it. Point it at `develop` or a release branch to keep `main` untouched. |
-| `branchPrefix` | any string (default `diablo/`) | the work branch is `<branchPrefix><issue>`. Change it to namespace diablo's branches (e.g. `bot/`, `ai/`) for branch-protection or filtering. |
-| `autoMerge: false` | **default** | on a final PASS the branch is left intact and diablo prints the exact `git merge` command. A passing verdict is not the same as "the human wants this in main" — you stay the gatekeeper of the trunk. |
-| `autoMerge: true` | opt-in | a clean merge lands automatically in the primary working copy. A merge **conflict** is never auto-resolved: diablo aborts the merge cleanly, lists the conflicting files, and prints the manual command. |
+| Field              | Values                           | Implication                                                                                                                                                                                              |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `targetBranch`     | any branch name (default `main`) | the work branch is cut FROM this and (if `autoMerge`) merged back INTO it. Point it at `develop` or a release branch to keep `main` untouched.                                                           |
+| `branchPrefix`     | any string (default `diablo/`)   | the work branch is `<branchPrefix><issue>`. Change it to namespace diablo's branches (e.g. `bot/`, `ai/`) for branch-protection or filtering.                                                            |
+| `autoMerge: false` | **default**                      | on a final PASS the branch is left intact and diablo prints the exact `git merge` command. A passing verdict is not the same as "the human wants this in main" — you stay the gatekeeper of the trunk.   |
+| `autoMerge: true`  | opt-in                           | a clean merge lands automatically in the primary working copy. A merge **conflict** is never auto-resolved: diablo aborts the merge cleanly, lists the conflicting files, and prints the manual command. |
 
 #### `retry` — how many times a failed implementation re-tries before halting
 
@@ -138,11 +180,11 @@ for that run only, without editing the file.
 `VERDICT: FAIL [implementation]`. The failed verifier feedback is injected into
 the re-run so it fixes the specific defect rather than blindly redoing the stage.
 
-| Value | Implication |
-| ----- | ----------- |
-| `0` | fail-fast — the first implementation FAIL halts the stage to a human. Cheapest, least autonomous. |
-| `2` (default) | up to two self-corrections per stage before halting. Absorbs most "almost right" worker misses without supervision. |
-| higher | more autonomy on flaky stages, but more spend on a stage that may be failing for a structural reason a retry can't fix. |
+| Value         | Implication                                                                                                             |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `0`           | fail-fast — the first implementation FAIL halts the stage to a human. Cheapest, least autonomous.                       |
+| `2` (default) | up to two self-corrections per stage before halting. Absorbs most "almost right" worker misses without supervision.     |
+| higher        | more autonomy on flaky stages, but more spend on a stage that may be failing for a structural reason a retry can't fix. |
 
 Note: a `VERDICT: FAIL [plan]` (the plan itself is wrong, not the code) **always**
 halts immediately regardless of `limit` — diablo never auto-replans, because the
@@ -161,9 +203,9 @@ mid-flight diff. Decline (anything not starting with `y`, including a bare Enter
 halts the run cleanly: the committed work stays on the worktree branch and the
 pipeline stops with a clear message — a human halt, not a failure.
 
-| Value | Implication |
-| ----- | ----------- |
-| `"none"` | **default** — fully AFK. No step ever pauses; the run goes from plan to final verdict to integration without asking. This is diablo's autonomous-conductor identity. |
+| Value        | Implication                                                                                                                                                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `"none"`     | **default** — fully AFK. No step ever pauses; the run goes from plan to final verdict to integration without asking. This is diablo's autonomous-conductor identity.                                                         |
 | `"approval"` | a `y/N` checkpoint after **every verifying step**: each per-stage verifier (once the stage passes) and the final whole-feature verification. You review each verified chunk and decide whether to proceed to the next stage. |
 
 What is **not** gated, even under `"approval"`: the design and worker steps. The
@@ -171,8 +213,8 @@ worker runs unattended (it's explicitly told not to ask for approval, since
 there's no human in its loop), and the retry loop self-corrects an implementation
 FAIL before the gate is ever consulted — so you're only asked once a stage has
 genuinely passed. Note this is orthogonal to `integration.autoMerge`: `gate`
-checkpoints *between stages during* a run; `autoMerge` decides what happens to
-the branch *after* the whole run passes. The PRD-approval prompt inside `diablo
+checkpoints _between stages during_ a run; `autoMerge` decides what happens to
+the branch _after_ the whole run passes. The PRD-approval prompt inside `diablo
 intake` is a separate checkpoint and is unaffected by this field.
 
 #### `skillsDir` — override the vendored skills location

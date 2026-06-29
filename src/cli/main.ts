@@ -9,6 +9,7 @@ import { readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { resolveSkillsDir, skillFile } from "../domain/skills-path.ts";
+import { resolvePiBinary } from "../domain/pi-binary.ts";
 import { PiAgent } from "../adapters/pi-agent.ts";
 import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
@@ -86,7 +87,7 @@ function buildDeps(
   progress: RunDiabloDeps["progress"],
 ): RunDiabloDeps {
   const runner = new NodeProcessRunner();
-  const piBinary = `${process.env.HOME}/.bun/bin/pi`;
+  const piBinary = resolvePiBinary(process.env);
   return {
     agent: new PiAgent(piBinary, runner, overrides, runId),
     git: new GitCli(repoRoot, runner),
@@ -227,7 +228,7 @@ async function main(argv: string[]): Promise<number> {
       const repoRoot = process.cwd();
       const configPath = `${repoRoot}/${CONFIG_FILENAME}`;
       const runner = new NodeProcessRunner();
-      const piBinary = `${process.env.HOME}/.bun/bin/pi`;
+      const piBinary = resolvePiBinary(process.env);
       await initDiablo(
         {
           fs: new NodeFs(),
@@ -376,7 +377,7 @@ async function executeIntake(feature: string): Promise<number> {
   const skillsDir = config.skillsDir ?? SKILLS_DIR;
   const scratchDir = `${repoRoot}/.scratch/${feature}`;
   const runner = new NodeProcessRunner();
-  const piBinary = `${process.env.HOME}/.bun/bin/pi`;
+  const piBinary = resolvePiBinary(process.env);
 
   const interactiveSkill = (skill: string, instruction: string) =>
     runner.run(piBinary, [`@${skillFile(skillsDir, skill)}`, instruction], repoRoot).then(() => {});

@@ -27,16 +27,19 @@ root. You'll copy it into a fresh project as diablo's "ticket."
 
 Check each of these before you start:
 
-| Requirement          | Check                    | Expected                   |
-| -------------------- | ------------------------ | -------------------------- |
-| **Bun** ≥ 1.3        | `bun --version`          | a version prints           |
-| **Pi coding agent**  | `ls "$HOME/.bun/bin/pi"` | the path exists            |
-| **git**              | `git --version`          | a version prints           |
-| **Pi is configured** | `pi --version`           | runs without an auth error |
+| Requirement          | Check           | Expected                   |
+| -------------------- | --------------- | -------------------------- |
+| **Node** ≥ 22 or Bun | `node --version` / `bun --version` | a version prints |
+| **Pi coding agent**  | `which pi`      | a path prints (any manager) |
+| **git**              | `git --version` | a version prints           |
+| **Pi is configured** | `pi --version`  | runs without an auth error |
 
-diablo shells out to `pi` at `$HOME/.bun/bin/pi` for every agent step. If Pi
-isn't installed or its provider/credentials aren't set up, the run will fail at
-the first step — sort that out first.
+diablo spawns `pi` for every agent step, resolving it from your `PATH` — so it
+works whether you installed Pi via npm, bun, or pnpm, as long as `which pi`
+succeeds. (If `pi` lives somewhere not on `PATH`, set `DIABLO_PI_BIN` to its
+absolute path instead — see the README's *Requirements* section.) If Pi isn't
+installed or its provider/credentials aren't set up, the run will fail at the
+first step — sort that out first.
 
 > **A note on the `diablo` command.** diablo isn't installed globally in this
 > tutorial; you run it straight from source. Everywhere below you'll see:
@@ -368,6 +371,7 @@ Once the basic run works, experiment:
 | Symptom                               | Likely cause                         | Fix                                                                   |
 | ------------------------------------- | ------------------------------------ | --------------------------------------------------------------------- |
 | First agent step fails immediately    | Pi not configured (provider/auth)    | run `pi --version` and set up Pi first                                |
+| `spawn pi ENOENT`                     | `pi` not on `PATH` in this shell     | ensure `which pi` succeeds, or set `DIABLO_PI_BIN` to its absolute path |
 | `exit code 127` on commit             | bun not on PATH for the husky hook   | `export PATH="$HOME/.bun/bin:$PATH"` before running                   |
 | `Vendored skills directory not found` | diablo invoked by a broken path      | use the absolute path to `src/cli/main.ts` from step 0                |
 | Plan file not written                 | planner step didn't produce the plan | check the ticket has clear "What to build" + acceptance criteria      |
