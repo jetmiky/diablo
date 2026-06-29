@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { GitCli } from "../src/adapters/git-cli.ts";
+import { NoChangesToCommitError } from "../src/ports/git.ts";
 import type { ProcessOutcome, ProcessRunner } from "../src/ports/agent.ts";
 
 class FakeRunner implements ProcessRunner {
@@ -86,8 +87,9 @@ describe("GitCli", () => {
   });
 
   test("commit gives a clear 'no changes' error when the worker produced nothing", async () => {
-    // git prints "nothing to commit" on STDOUT and exits non-zero; the message
-    // must explain the worker made no changes, not just echo a cryptic code.
+    // git prints "nothing to commit" on STDOUT and exits non-zero; surface a
+    // typed NoChangesToCommitError so callers can defer to the verifier rather
+    // than aborting the whole pipeline.
     const runner = new FakeRunner([
       { stdout: "", stderr: "", exitCode: 0 }, // git add -A
       { stdout: "On branch x\nnothing to commit, working tree clean", stderr: "", exitCode: 1 },
@@ -95,7 +97,7 @@ describe("GitCli", () => {
     const git = new GitCli("/proj", runner);
 
     await expect(git.commit("/proj/.worktrees/billing-02", "msg")).rejects.toThrow(
-      /no changes to commit/i,
+      NoChangesToCommitError,
     );
   });
 

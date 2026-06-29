@@ -3,7 +3,7 @@
  * ProcessRunner. The ProcessRunner seam keeps this logic unit-testable with a
  * fake; the live binding (NodeProcessRunner) is used in production.
  */
-import type { GitPort } from "../ports/git.ts";
+import { NoChangesToCommitError, type GitPort } from "../ports/git.ts";
 import type { GitMergePort, MergeResult } from "../ports/git-merge.ts";
 import type { ProcessRunner } from "../ports/agent.ts";
 
@@ -51,10 +51,7 @@ export class GitCli implements GitPort, GitMergePort {
       // git prints "nothing to commit" on stdout, not stderr.
       const combined = `${commitOutcome.stdout}\n${commitOutcome.stderr}`;
       if (/nothing to commit/i.test(combined)) {
-        throw new Error(
-          `No changes to commit in ${worktree}: the step produced no file changes ` +
-            `but was expected to. Check the agent actually implemented the work.`,
-        );
+        throw new NoChangesToCommitError(worktree);
       }
       throw new Error(
         `git commit failed with code ${commitOutcome.exitCode}.\n${commitOutcome.stderr.trim()}`,

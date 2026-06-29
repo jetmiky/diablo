@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { runStep, VerificationFailedError, type RunStepDeps, type Step } from "../src/app/run-step.ts";
 import type { AgentPort } from "../src/ports/agent.ts";
-import type { GitPort } from "../src/ports/git.ts";
+import { NoChangesToCommitError, type GitPort } from "../src/ports/git.ts";
 import type { PiResult } from "../src/domain/pi-result.ts";
 import type { RunSpec } from "../src/domain/run-spec.ts";
 
@@ -129,6 +129,33 @@ describe("runStep", () => {
     const git = new FakeGit();
     await expect(runStep(deps(agent, git), baseStep)).rejects.toThrow(/code 1/);
     expect(git.commits).toHaveLength(0);
+  });
+
+  test("a worker that produced no changes defers to the verifier (no commit, no throw)", async () => {
+    // A stage whose scope an earlier stage already satisfied has nothing new to
+    // commit. That must not abort the pipeline — return without a commit SHA and
+    // let the verifier judge whether the stage is satisfied.
+    const agent = new FakeAgent(fakeResult({ text: "nothing left to do" }));
+    const noChangeGit: GitPort = {
+      worktreeAdd: () => Promise.reject(new Error("not used")),
+      commit: () => Promise.reject(new NoChangesToCommitError("/proj/.worktrees/billing-02")),
+      headSha: () => Promise.resolve("a".repeat(40)),
+      diffStat: () => Promise.resolve(""),
+    };
+    const result = await runStep(deps(agent, noChangeGit), baseStep);
+    expect(result.commit).toBeUndefined();
+    expect(result.text).toBe("nothing left to do");
+  });
+
+  test("a non-NoChanges git error during commit still propagates", async () => {
+    const agent = new FakeAgent(fakeResult());
+    const brokenGit: GitPort = {
+      worktreeAdd: () => Promise.reject(new Error("not used")),
+      commit: () => Promise.reject(new Error("git index locked")),
+      headSha: () => Promise.resolve("a".repeat(40)),
+      diffStat: () => Promise.resolve(""),
+    };
+    await expect(runStep(deps(agent, brokenGit), baseStep)).rejects.toThrow(/index locked/);
   });
 });
 

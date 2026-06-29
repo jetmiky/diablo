@@ -12,7 +12,7 @@
  * it is unit-tested against fakes.
  */
 import type { AgentPort } from "../ports/agent.ts";
-import type { GitPort } from "../ports/git.ts";
+import { NoChangesToCommitError, type GitPort } from "../ports/git.ts";
 import type { GateMode, GatePort } from "../ports/gate.ts";
 import { GateDeclinedError } from "../ports/gate.ts";
 import type { PiResult } from "../domain/pi-result.ts";
@@ -119,9 +119,19 @@ export async function runStep(deps: RunStepDeps, step: Step): Promise<StepResult
     return result;
   }
 
-  const commit = await deps.git.commit(step.worktree, step.commitMessage);
+  // Commit the step's work. A worker that produced NO new changes is not a
+  // failure: a stage whose scope an earlier stage already satisfied has nothing
+  // to commit, and the verifier — not the commit step — is the source of truth
+  // for whether the stage is satisfied. So a NoChangesToCommitError is swallowed
+  // (no commit SHA, the verifier judges next); any other git error propagates.
+  let commit: string | undefined;
+  try {
+    commit = await deps.git.commit(step.worktree, step.commitMessage);
+  } catch (err) {
+    if (!(err instanceof NoChangesToCommitError)) throw err;
+  }
   await maybeGate(deps, step, result, commit);
-  return { ...result, commit };
+  return commit === undefined ? result : { ...result, commit };
 }
 
 /**
