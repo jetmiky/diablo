@@ -6,8 +6,8 @@
 > bullets into the interactive `diablo intake` grilling session and let the
 > Socratic dialogue pull the precise requirements out of you. The polished,
 > ready-to-run version of this same idea lives in
-> [`toy-project.md`](toy-project.md) — compare the two when you're done to see
-> what intake added.
+> [`feature-convert.md`](feature-convert.md) — compare the two when you're done
+> to see what intake added.
 
 - I want a small TypeScript library to work with Roman numerals
 - It should go both ways: number → Roman numeral, and Roman numeral → number
