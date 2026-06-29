@@ -15,6 +15,7 @@ import { runIssue, type IssueResult } from "./run-issue.ts";
 import type { RetryPolicy } from "./run-stage.ts";
 import { integrate, type IntegrateResult } from "./integrate.ts";
 import { branchName } from "../domain/branch.ts";
+import { artifactIgnore } from "../domain/artifact-ignore.ts";
 import type { GatePort } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 import type { RunStepDeps } from "./run-step.ts";
@@ -62,6 +63,13 @@ export async function runDiablo(
   if (!(await deps.fs.exists(config.worktree))) {
     await deps.git.worktreeAdd(config.issue, config.baseBranch, branch);
   }
+
+  // Make diablo's per-run machine artifacts (.plans/: frozen plan, live progress
+  // tracker, design notes) uncommittable, so `git add -A` never sweeps them onto
+  // the feature branch. Written unconditionally — fresh OR resumed worktree — so
+  // an existing worktree from before this guard is retrofitted too. Idempotent.
+  const ignore = artifactIgnore(config.worktree);
+  await deps.fs.write(ignore.path, ignore.content);
 
   const issue = await loadIssue(deps, config);
 

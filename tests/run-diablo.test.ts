@@ -107,6 +107,23 @@ describe("runDiablo", () => {
 
     expect(agent.tiers).toEqual(["planner-med", "worker", "verifier"]); // planner skipped
   });
+
+  test("writes a self-ignoring .plans/.gitignore so machine artifacts never commit", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    await runDiablo(deps(agent, new FakeGit(), fs), config);
+
+    const ignore = fs.files.get("/proj/.worktrees/billing-02/.plans/.gitignore");
+    expect(ignore?.trim()).toBe("*");
+  });
+
+  test("retrofits the artifact ignore even when the worktree already exists (resume)", async () => {
+    const fs = new FakeFs({ [config.planPath]: PLAN });
+    fs.dirs.add(config.worktree);
+    await runDiablo(deps(new FakeAgent(), new FakeGit(), fs), config);
+
+    expect(fs.files.get("/proj/.worktrees/billing-02/.plans/.gitignore")?.trim()).toBe("*");
+  });
 });
 
 describe("runDiablo integration", () => {
