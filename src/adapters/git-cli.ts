@@ -132,6 +132,32 @@ export class GitCli implements GitPort, GitMergePort {
     return { ok: false, conflicts };
   }
 
+  /**
+   * Returns true if every commit on `branch` is already contained in
+   * `targetBranch` (i.e., the branch has been merged). Runs in the PRIMARY
+   * working copy (repoRoot). Throws on git failure (e.g., unknown ref).
+   */
+  async isMerged(branch: string, targetBranch: string): Promise<boolean> {
+    const outcome = await this.runner.run(
+      "git",
+      ["merge-base", "--is-ancestor", branch, targetBranch],
+      this.repoRoot,
+    );
+
+    if (outcome.exitCode === 0) {
+      return true;
+    }
+
+    if (outcome.exitCode === 1) {
+      return false;
+    }
+
+    // Any other non-zero exit (e.g., unknown ref) is an error
+    throw new Error(
+      `git merge-base --is-ancestor failed with code ${outcome.exitCode}.\n${outcome.stderr.trim()}`,
+    );
+  }
+
   /** The files with merge conflicts (unmerged, diff-filter=U). */
   private async conflictingFiles(): Promise<string[]> {
     const outcome = await this.runner.run(

@@ -216,3 +216,50 @@ describe("GitCli merge", () => {
     await expect(git.merge("main", "diablo/billing-02")).rejects.toThrow(/checkout.*main/s);
   });
 });
+
+describe("GitCli isMerged", () => {
+  test("returns true when branch is merged (exitCode 0)", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/proj", runner);
+
+    const result = await git.isMerged("diablo/billing-02", "main");
+
+    expect(result).toBe(true);
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]!.command).toBe("git");
+    expect(runner.calls[0]!.args).toEqual(["merge-base", "--is-ancestor", "diablo/billing-02", "main"]);
+    expect(runner.calls[0]!.cwd).toBe("/proj");
+  });
+
+  test("returns false when branch is not merged (exitCode 1)", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 1 });
+    const git = new GitCli("/proj", runner);
+
+    const result = await git.isMerged("diablo/billing-02", "main");
+
+    expect(result).toBe(false);
+    expect(runner.calls[0]!.args).toEqual(["merge-base", "--is-ancestor", "diablo/billing-02", "main"]);
+  });
+
+  test("throws on unknown ref (other non-zero exitCode)", async () => {
+    const runner = new FakeRunner({
+      stdout: "",
+      stderr: "fatal: Not a valid object name diablo/unknown",
+      exitCode: 128,
+    });
+    const git = new GitCli("/proj", runner);
+
+    await expect(git.isMerged("diablo/unknown", "main")).rejects.toThrow(
+      /fatal: Not a valid object name/,
+    );
+  });
+
+  test("runs in repoRoot, not a worktree", async () => {
+    const runner = new FakeRunner({ stdout: "", stderr: "", exitCode: 0 });
+    const git = new GitCli("/custom/repo", runner);
+
+    await git.isMerged("feat/x", "develop");
+
+    expect(runner.calls[0]!.cwd).toBe("/custom/repo");
+  });
+});
