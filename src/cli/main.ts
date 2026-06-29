@@ -15,6 +15,11 @@ import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
 import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
+import {
+  acquireRunLock,
+  RunLockedError,
+  type RunLockHandle,
+} from "../adapters/run-lock-file.ts";
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResult } from "../app/run-diablo.ts";
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
@@ -558,6 +563,21 @@ async function executeRun(
     );
   }
 
+  // Concurrency guard: acquire the per-issue run lock BEFORE any worktree
+  // mutation or status write. A second live run of the same issue fails fast
+  // here (non-zero, worktree untouched); a stale lock left by a crashed run is
+  // reclaimed automatically. Released in the finally below on every exit path.
+  let lock: RunLockHandle;
+  try {
+    lock = await acquireRunLock(diabloDir, target);
+  } catch (err) {
+    if (err instanceof RunLockedError) {
+      process.stderr.write(`error: ${err.message}\n`);
+      return 1;
+    }
+    throw err;
+  }
+
   await writeStatus({ fs }, { diabloDir, issue: target, status: "in-progress" });
 
   try {
@@ -638,6 +658,10 @@ async function executeRun(
       return 1;
     }
     throw err;
+  } finally {
+    // Release the per-issue lock on every exit path — completion, clean halt,
+    // or crash. Best-effort and idempotent; only removes a lockfile we own.
+    await lock.release();
   }
 }
 

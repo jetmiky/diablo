@@ -385,6 +385,26 @@ runs (`plan` → `planned`, `run` start → `in-progress`, the done gate → `do
 shown as `done (unmerged)`, and the condition `diablo plan` warns about on a
 later issue.
 
+## Concurrent runs of the same issue
+
+`diablo run <issue>` takes a per-issue lock before touching the worktree, so two
+overlapping runs of the same issue can't race into the same branch and corrupt
+each other's commits and progress state. The lock is a small file under the
+gitignored `.diablo/<issue>/run.lock` (never committed), recording the owning
+pid and start time.
+
+- A second run while one is live **fails fast** with a non-zero exit and a clear
+  message (`issue <X> is already being run (pid …, started …)`) — and never
+  mutates the worktree.
+- The lock is released on every exit path: completion, a clean halt
+  (`needs-human`), or a crash.
+- Staleness is decided by **liveness, not a timeout**: if the owning process is
+  gone (a crashed run), the next run detects the dead pid and reclaims the lock
+  automatically — a crash never permanently wedges an issue. A corrupt lockfile
+  is likewise treated as no lock.
+- The lock is **per-issue**: different issues run concurrently, unaffected by
+  each other's locks.
+
 ## The done gate
 
 A run finishing PASS is necessary but not sufficient — the issue's acceptance
