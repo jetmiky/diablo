@@ -19,6 +19,12 @@ class FakeRunner implements ProcessRunner {
     }
     return Promise.resolve(outcome);
   }
+
+  // GitCli never runs interactively — git plumbing is always captured. Present
+  // only to satisfy the ProcessRunner contract; a call here is a wiring bug.
+  runInteractive(): Promise<ProcessOutcome> {
+    throw new Error("FakeRunner: runInteractive must not be used by GitCli");
+  }
 }
 
 describe("GitCli", () => {

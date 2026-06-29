@@ -329,7 +329,7 @@ async function runSetupSkills(
 ): Promise<void> {
   process.stdout.write("\nSetting up engineering skills (interactive)...\n");
   const skill = skillFile(SKILLS_DIR, "setup-matt-pocock-skills");
-  await runner.run(
+  await runner.runInteractive(
     piBinary,
     [`@${skill}`, "Set up the engineering skills for this project following the skill."],
     repoRoot,
@@ -380,7 +380,9 @@ async function executeIntake(feature: string): Promise<number> {
   const piBinary = resolvePiBinary(process.env);
 
   const interactiveSkill = (skill: string, instruction: string) =>
-    runner.run(piBinary, [`@${skillFile(skillsDir, skill)}`, instruction], repoRoot).then(() => {});
+    runner
+      .runInteractive(piBinary, [`@${skillFile(skillsDir, skill)}`, instruction], repoRoot)
+      .then(() => {});
 
   const result = await intakeDiablo(
     {

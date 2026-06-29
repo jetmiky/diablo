@@ -24,4 +24,13 @@ export interface ProcessOutcome {
 
 export interface ProcessRunner {
   run(command: string, args: string[], cwd: string): Promise<ProcessOutcome>;
+  /**
+   * Like `run`, but inherits the parent's stdio so the child can prompt the
+   * human and read their keystrokes — the binding for Socratic Pi sessions
+   * (init's skill setup, intake's grill/PRD/issues). Because stdio is inherited
+   * to the terminal, output is NOT captured: stdout/stderr come back empty and
+   * only the exit code is meaningful. Never use this for steps whose output is
+   * parsed (the `run`/`refactor` agent pipeline) — those must use `run`.
+   */
+  runInteractive(command: string, args: string[], cwd: string): Promise<ProcessOutcome>;
 }

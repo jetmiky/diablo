@@ -32,6 +32,12 @@ class FakeRunner implements ProcessRunner {
     this.calls.push({ command, args, cwd });
     return Promise.resolve(this.outcome);
   }
+
+  // PiAgent runs headless (-p, JSONL parsed from captured stdout), never
+  // interactively. Present only to satisfy the ProcessRunner contract.
+  runInteractive(): Promise<ProcessOutcome> {
+    throw new Error("FakeRunner: runInteractive must not be used by PiAgent");
+  }
 }
 
 describe("PiAgent", () => {
