@@ -185,4 +185,27 @@ describe("parseArgs", () => {
       plannerModel: "test",
     });
   });
+
+  test("parses the 'telegram setup' subcommand", () => {
+    expect(parseArgs(["telegram", "setup"])).toEqual({
+      command: "telegram",
+      sub: "setup",
+    });
+  });
+
+  test("telegram without a subcommand is an error", () => {
+    const parsed = parseArgs(["telegram"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/telegram|setup/i);
+    }
+  });
+
+  test("telegram with an unknown subcommand is an error", () => {
+    const parsed = parseArgs(["telegram", "frobnicate"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/telegram|setup/i);
+    }
+  });
 });

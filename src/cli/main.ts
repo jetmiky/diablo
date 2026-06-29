@@ -5,7 +5,7 @@
  * GitCli, StdinGate) are assembled here and injected into the use-cases.
  */
 import { parseArgs } from "./args.ts";
-import { readdirSync, statSync, existsSync } from "node:fs";
+import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { resolveSkillsDir, skillFile } from "../domain/skills-path.ts";
@@ -19,6 +19,7 @@ import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResu
 import { loadConfig } from "../app/load-config.ts";
 import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
+import { setupTelegram } from "../app/setup-telegram.ts";
 import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
 import { resolveModels, type ConfigModels, type DiabloConfig } from "../domain/config.ts";
 import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
@@ -30,6 +31,11 @@ import { TelegramProgress } from "../adapters/telegram-progress.ts";
 import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
 import { FanOutProgress } from "../adapters/fan-out-progress.ts";
 import { Heartbeat } from "../domain/heartbeat.ts";
+import {
+  parseTelegramCredentialsFile,
+  resolveTelegramCredentials,
+  TELEGRAM_CREDENTIALS_FILENAME,
+} from "../domain/telegram-credentials.ts";
 import { GateDeclinedError, type GateMode } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
@@ -50,6 +56,7 @@ Usage:
   diablo plan [issue]    Negotiate a plan with the planner, then freeze it
   diablo run [issue]     Run an issue's stages through the agent pipeline
   diablo refactor <area> Refactor an area (same pipeline, refactor planner skill)
+  diablo telegram setup  Configure per-repo Telegram push credentials
   diablo --version       Print the version
   diablo --help          Show this help
 
@@ -137,21 +144,38 @@ function buildDeps(
 
 /**
  * Assembles the progress sinks: stdout (always), a live progress.md tracker in
- * the worktree (always), and a Telegram push sink IFF credentials are present
- * in the environment (DIABLO_TELEGRAM_BOT_TOKEN + DIABLO_TELEGRAM_CHAT_ID). No
- * credentials are read from config or committed; absent them, Telegram is just
- * skipped. The fan-out swallows any sink failure so progress never halts a run.
+ * the worktree (always), and a Telegram push sink IFF credentials resolve. The
+ * credentials come from the environment (DIABLO_TELEGRAM_BOT_TOKEN +
+ * DIABLO_TELEGRAM_CHAT_ID) OR the per-repo file (.diablo/telegram.json), env
+ * winning per field and the two sources mixable; both fields must resolve or the
+ * sink stays off (a partial config never throws). No credentials are read from
+ * the committed diablo.config.json. The fan-out swallows any sink failure so
+ * progress never halts a run. See domain/telegram-credentials.ts.
  */
-function buildProgress(progressPath: string, issue: string): FanOutProgress {
+function buildProgress(progressPath: string, issue: string, repoRoot: string): FanOutProgress {
   const sinks: ProgressPort[] = [new StdoutProgress(), new ProgressMdAdapter(new NodeFs(), progressPath, issue)];
 
-  const token = process.env.DIABLO_TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.DIABLO_TELEGRAM_CHAT_ID;
-  if (token && chatId) {
-    sinks.push(new TelegramProgress(new TelegramBotClient(token, chatId)));
+  const creds = resolveTelegramCredentials(
+    { botToken: process.env.DIABLO_TELEGRAM_BOT_TOKEN, chatId: process.env.DIABLO_TELEGRAM_CHAT_ID },
+    readTelegramCredentialsFile(repoRoot),
+  );
+  if (creds) {
+    sinks.push(new TelegramProgress(new TelegramBotClient(creds.botToken, creds.chatId)));
   }
 
   return new FanOutProgress(sinks);
+}
+
+/**
+ * Reads the per-repo Telegram credential file synchronously at composition time,
+ * tolerating its absence (returns no fields → the resolver leaves Telegram off).
+ * The parse itself never throws on malformed content, so a broken file disables
+ * the sink rather than crashing a run.
+ */
+function readTelegramCredentialsFile(repoRoot: string): { botToken?: string; chatId?: string } {
+  const path = `${repoRoot}/${TELEGRAM_CREDENTIALS_FILENAME}`;
+  if (!existsSync(path)) return {};
+  return parseTelegramCredentialsFile(readFileSync(path, "utf8"));
 }
 
 /**
@@ -316,6 +340,10 @@ async function main(argv: string[]): Promise<number> {
 
     case "intake": {
       return executeIntake(parsed.feature);
+    }
+
+    case "telegram": {
+      return executeTelegramSetup();
     }
   }
 }
@@ -488,7 +516,7 @@ async function executeRun(
   if (rejected) return 2;
 
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
-  const progress = buildProgress(progressPath, target);
+  const progress = buildProgress(progressPath, target, repoRoot);
   const deps = buildDeps(repoRoot, overrides, runId, progress);
 
   await writeStatus({ fs }, { diabloDir, issue: target, status: "in-progress" });
@@ -775,6 +803,34 @@ async function executeIntake(feature: string): Promise<number> {
     );
   }
   return 0;
+}
+
+/**
+ * Runs `diablo telegram setup`: interactively collects the bot token + chat id
+ * and writes them to the per-repo credential file (.diablo/telegram.json). This
+ * is what makes the credentials machine-written — and thus at home in the
+ * machine-managed .diablo/ runtime dir, where they inherit its gitignore rule.
+ * Foreground and interactive (a setup question, like init); not the AFK run.
+ */
+async function executeTelegramSetup(): Promise<number> {
+  const repoRoot = process.cwd();
+  const credentialsPath = `${repoRoot}/${TELEGRAM_CREDENTIALS_FILENAME}`;
+
+  process.stdout.write(
+    `\nConfiguring Telegram push for this repo. Credentials are written to\n` +
+      `${TELEGRAM_CREDENTIALS_FILENAME} (gitignored). Environment variables, when set,\n` +
+      `override the file at run time.\n\n`,
+  );
+
+  const outcome = await setupTelegram(
+    { fs: new NodeFs(), prompt: new StdinPrompt(), print: (line) => process.stdout.write(`${line}\n`) },
+    { credentialsPath },
+  );
+
+  if (outcome === "written") {
+    process.stdout.write(`\n✅ Telegram configured — wrote ${TELEGRAM_CREDENTIALS_FILENAME}\n`);
+  }
+  return outcome === "written" ? 0 : 1;
 }
 
 /**

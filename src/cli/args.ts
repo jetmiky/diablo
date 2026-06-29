@@ -15,6 +15,7 @@ export type ParsedArgs =
   | ({ command: "plan"; issue?: string } & ModelFlagArgs)
   | ({ command: "refactor"; area: string } & ModelFlagArgs)
   | { command: "intake"; feature: string }
+  | { command: "telegram"; sub: "setup" }
   | { command: "version" }
   | { command: "help" }
   | { command: "init" }
@@ -44,6 +45,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
       return { command: "error", message: "intake requires a feature slug: diablo intake <feature>" };
     }
     return { command: "intake", feature };
+  }
+
+  if (first === "telegram") {
+    const sub = rest[0];
+    if (sub !== "setup") {
+      return { command: "error", message: "telegram requires a subcommand: diablo telegram setup" };
+    }
+    return { command: "telegram", sub: "setup" };
   }
 
   if (first === "run" || first === "plan") {

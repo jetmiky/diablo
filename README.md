@@ -123,6 +123,24 @@ keeps its built-in default. A malformed value (bad JSON, wrong type, unknown
 enum) fails loudly at load time rather than silently reverting — so a typo can
 never quietly change how a run behaves.
 
+### Telegram push (`diablo telegram setup`)
+
+Run progress can be pushed to Telegram. Credentials are **never** stored in
+`diablo.config.json`; they live in a per-repo, gitignored `.diablo/telegram.json`
+written by an interactive setup command:
+
+```bash
+diablo telegram setup   # prompts for the bot token and chat id, writes .diablo/telegram.json
+```
+
+Because the file lives under the machine-managed `.diablo/` dir, it inherits that
+dir's gitignore rule — the token can never be committed. At run time the
+credentials resolve as **env > file > disabled**: the environment
+(`DIABLO_TELEGRAM_BOT_TOKEN` / `DIABLO_TELEGRAM_CHAT_ID`) overrides the file per
+field (handy for CI and one-off runs), the two sources are mixable, and Telegram
+stays off unless **both** a bot token and a chat id resolve. One bot per project
+keeps each repo pushing to its own chat with its own `getUpdates` slot.
+
 ### Field reference
 
 #### `models` — which model runs each tier
@@ -374,9 +392,13 @@ A run emits structured progress events through a `ProgressPort` to three sinks:
   `<b>/<i>/<code>/<pre>/<a>` subset, escaped for path/SHA/code-heavy content).
   Liveness is shown as a single live bubble edited in place and throttled to one
   edit per 15s (respecting the Bot API edit rate limit); a discrete event closes
-  the bubble so the next heartbeat opens a fresh one. Enabled only when
-  `DIABLO_TELEGRAM_BOT_TOKEN` and `DIABLO_TELEGRAM_CHAT_ID` are set in the
-  environment; no credentials are read from config or committed.
+  the bubble so the next heartbeat opens a fresh one. Enabled when a bot token
+  and chat id both resolve, from either the environment
+  (`DIABLO_TELEGRAM_BOT_TOKEN` / `DIABLO_TELEGRAM_CHAT_ID`) or the per-repo
+  `.diablo/telegram.json` file written by `diablo telegram setup` — env wins per
+  field, the two sources are mixable, and a partial config leaves Telegram off.
+  No credentials are read from `diablo.config.json` or committed (the file is
+  gitignored via the existing `.diablo/` rule).
 
 ### Liveness
 
