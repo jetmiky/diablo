@@ -89,6 +89,17 @@ describe("proposePlan", () => {
     expect(instruction.toLowerCase()).toMatch(/risk|assumption/);
   });
 
+  test("appends engine plan-shape guidance (no zero-source stage; criteria trace to ticket)", async () => {
+    const agent = new FakeAgent();
+    const fs = new FakeFs();
+    await proposePlan({ agent, fs }, config);
+
+    const lower = agent.calls[0]!.instruction.toLowerCase();
+    expect(lower).toMatch(/compilable|source file/); // issue #1 option C
+    expect(lower).toMatch(/acceptance criteri/); // issue #2 option C
+    expect(lower).toMatch(/ticket|not invent/);
+  });
+
   test("uses stable runId from config", async () => {
     const agent = new FakeAgent();
     const fs = new FakeFs();

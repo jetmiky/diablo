@@ -148,6 +148,30 @@ describe("loadIssue", () => {
     expect(agent.calls[0]!.instruction.toLowerCase()).toMatch(/master plan|master-plan/);
   });
 
+  test("appends engine plan-shape guidance (no zero-source stage; criteria trace to ticket)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    await loadIssue(deps(agent, fs), config);
+
+    const lower = agent.calls[0]!.instruction.toLowerCase();
+    expect(lower).toMatch(/compilable|source file/); // issue #1 option C
+    expect(lower).toMatch(/acceptance criteri/); // issue #2 option C
+    expect(lower).toMatch(/ticket|not invent/);
+  });
+
+  test("the guidance is also injected on a refactor run (custom planner instruction)", async () => {
+    const fs = new FakeFs();
+    const agent = new FakeAgent(() => fs.write(config.planPath, PLAN));
+    await loadIssue(deps(agent, fs), {
+      ...config,
+      plannerInstruction: "Produce a refactor plan following improve-codebase-architecture.",
+    });
+
+    const lower = agent.calls[0]!.instruction.toLowerCase();
+    expect(lower).toContain("improve-codebase-architecture");
+    expect(lower).toMatch(/compilable|source file/);
+  });
+
   // --- issue 08: bounded re-ask on a malformed plan ---
 
   const MALFORMED = `# Plan\n\nI forgot the stage headings entirely.\n`;

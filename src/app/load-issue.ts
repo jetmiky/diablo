@@ -17,6 +17,7 @@ import type { RunSpec } from "../domain/run-spec.ts";
 import type { GateMode } from "../ports/gate.ts";
 import { parsePlan, PlanParseError, type Plan } from "../domain/plan.ts";
 import { planToIssue } from "./plan-to-issue.ts";
+import { PLANNER_GUIDANCE } from "./planner-guidance.ts";
 import type { Issue } from "./run-issue.ts";
 
 export interface LoadIssueConfig {
@@ -112,11 +113,15 @@ async function generatePlan(
 
   // On a re-ask, lead with the parser's complaint so the planner fixes the
   // specific format defect rather than blindly regenerating.
-  const instruction = reaskDiagnostic
+  const withReask = reaskDiagnostic
     ? `Your previous plan could not be parsed: ${reaskDiagnostic}\n\n` +
       `Rewrite the plan to ${config.planPath} so it parses, following the format above. ` +
       baseInstruction
     : baseInstruction;
+
+  // Append engine-owned plan-shape guidance (no zero-source stage; acceptance
+  // criteria must trace to the ticket) regardless of which flow built the base.
+  const instruction = `${withReask}\n\n${PLANNER_GUIDANCE}`;
 
   const spec: RunSpec = {
     tier: "planner-high",

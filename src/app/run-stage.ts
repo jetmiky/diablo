@@ -27,6 +27,16 @@ export interface Stage {
   issue: string;
   stage: string;
   steps: Step[];
+  /**
+   * Recovery worker for a stage whose verifying step has NO worker in its own
+   * step list — specifically the FINAL whole-feature verification (a planner-
+   * tier step with verifies:true that commits nothing). When that holistic
+   * verifier returns a code-fixable FAIL [implementation], run-stage re-runs
+   * THIS worker with the verdict feedback, then re-verifies — bounded by the
+   * retry limit — instead of halting unrecoverably after every stage passed.
+   * Omitted for ordinary stages, which recover via their own inline worker.
+   */
+  recoveryWorker?: Step;
 }
 
 export interface StageResult {
@@ -60,12 +70,18 @@ export async function runStage(
 
   const emit = (event: ProgressEvent) => deps.progress?.emit(event) ?? Promise.resolve();
 
-  // The worker is what an implementation FAIL re-runs; a verification-only
-  // stage has none, so its FAIL can only halt.
-  const workerStep = stage.steps.find((s) => s.tier === "worker");
+  // What an implementation FAIL re-runs to recover. An ordinary stage uses its
+  // own inline worker; the FINAL verification stage has none in its step list,
+  // so it falls back to the stage's recoveryWorker (when provided).
+  const inlineWorker = stage.steps.find((s) => s.tier === "worker");
+  const recoveryWorker = inlineWorker ?? stage.recoveryWorker;
 
   for (const step of stage.steps) {
-    if (step.tier !== "verifier") {
+    // A step "verifies" when it is on the verifier tier OR is explicitly marked
+    // verifies:true (the planner-tier FINAL verification). Both enforce a
+    // verdict in run-step and both must be recoverable here.
+    const isVerifying = step.verifies ?? step.tier === "verifier";
+    if (!isVerifying) {
       const activity = ACTIVITY[step.tier];
       if (activity) await emit({ kind: activity, stage: stage.stage } as ProgressEvent);
       const result = await runStep(deps, step);
@@ -82,8 +98,8 @@ export async function runStage(
       continue;
     }
 
-    // Verifier step: run it, and on an implementation FAIL re-run the worker
-    // with feedback up to the limit before re-verifying.
+    // Verifying step: run it, and on an implementation FAIL re-run the recovery
+    // worker with feedback up to the limit before re-verifying.
     let attempt = 0;
     while (true) {
       try {
@@ -98,11 +114,11 @@ export async function runStage(
 
         const category = err.category;
         // A plan defect, an exhausted budget, or nothing to re-run → halt.
-        if (category === "plan" || attempt >= retry.limit || !workerStep) throw err;
+        if (category === "plan" || attempt >= retry.limit || !recoveryWorker) throw err;
 
         attempt += 1;
         await emit({ kind: "retry", stage: stage.stage, attempt });
-        const retryWorker = withFeedback(workerStep, err.verdictText, attempt);
+        const retryWorker = withFeedback(recoveryWorker, err.verdictText, attempt);
         await emit({ kind: "worker-running", stage: stage.stage });
         const workerResult = await runStep(deps, retryWorker);
         steps.push(workerResult);
