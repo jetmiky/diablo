@@ -52,19 +52,3 @@ export type ProgressEvent =
 export interface ProgressPort {
   emit(event: ProgressEvent): Promise<void>;
 }
-
-/**
- * Whether an event represents the pipeline actively working (true) or idle and
- * waiting on a human (false). Derived purely from the event kind so any sink
- * can show an accurate "working / idle" indicator without extra state.
- */
-export function isWorking(event: ProgressEvent): boolean {
-  switch (event.kind) {
-    case "waiting-for-approval":
-    case "done":
-    case "halted":
-      return false;
-    default:
-      return true;
-  }
-}

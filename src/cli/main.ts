@@ -44,7 +44,7 @@ import {
   resolveTelegramCredentials,
   TELEGRAM_CREDENTIALS_FILENAME,
 } from "../domain/telegram-credentials.ts";
-import { GateDeclinedError, type GateMode } from "../ports/gate.ts";
+import { type GateMode } from "../ports/gate.ts";
 import type { ProgressPort } from "../ports/progress.ts";
 import type { ModelOverrides } from "../domain/run-spec.ts";
 import { enrichIssues } from "../app/enrich-issues.ts";
@@ -52,9 +52,11 @@ import { negotiatePlan } from "../app/negotiate-plan.ts";
 import { finalizeIssue } from "../app/finalize-issue.ts";
 import { readStatus, writeStatus } from "../app/issue-status-store.ts";
 import { listFor, type SelectorContext } from "../domain/issue-listing.ts";
-import { VerificationFailedError, StepTimeoutError } from "../app/run-step.ts";
-import { PlanParseError } from "../domain/plan.ts";
-import { RunBudgetExceededError } from "../domain/run-budget.ts";
+import {
+  classifyRunSuccess,
+  classifyRunError,
+  isRethrow,
+} from "../app/run-outcome.ts";
 
 const VERSION = "0.1.0";
 
@@ -570,7 +572,7 @@ async function executeRun(
   if (config.verify.commands.length === 0) {
     process.stdout.write(
       `\n⚠️  No verify.commands configured — verification is LLM-verdict-only (not measured).\n` +
-        `   Add e.g. \"verify\": { \"commands\": ["bun run typecheck", "bun test"] } to diablo.config.json\n` +
+        `   Add e.g. "verify": { "commands": ["bun run typecheck", "bun test"] } to diablo.config.json\n` +
         `   so diablo runs the gates itself and a green verdict can't override a real failure.\n\n`,
     );
   }
@@ -610,66 +612,20 @@ async function executeRun(
       },
     );
 
-    if (decision.status === "done") {
-      process.stdout.write(
-        `\n✅ ${noun} ${target} complete` +
-          (result.commit ? ` — final commit ${result.commit.slice(0, 10)}` : "") +
-          ` — status: done\n`,
-      );
-    } else {
-      process.stdout.write(
-        `\n⚠️  ${noun} ${target} verified PASS but the done gate held — status: needs-human.\n` +
-          `   ${decision.reason}\n` +
-          decision.unmet.map((c) => `   - unmet: ${c}`).join("\n") +
-          `\n`,
-      );
-    }
+    // Classify the success outcome (done vs done-gate-held). finalizeIssue
+    // already persisted the status, so the view's status is null here.
+    const view = classifyRunSuccess(noun, target, decision, result.commit);
+    process.stdout.write(view.message);
     writeIntegrationNotice(result.integration);
-    return 0;
+    return view.exitCode;
   } catch (err) {
-    if (err instanceof GateDeclinedError) {
-      // A human declined at an approval gate — a clean halt awaiting them.
-      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
-      process.stdout.write(`\n⏸  ${err.message} — status: needs-human\n`);
-      return 0;
-    }
-    if (err instanceof VerificationFailedError) {
-      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
-      process.stdout.write(`\n⚠️  ${noun} ${target} halted at verification — status: needs-human.\n`);
-      return 1;
-    }
-    if (err instanceof PlanParseError) {
-      // The planner's plan could not be parsed even after one bounded re-ask
-      // (see loadIssue). Halt cleanly with the diagnostic rather than crashing
-      // with a raw stack — the plan needs a human's eye, not another retry.
-      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
-      process.stdout.write(
-        `\n⚠️  ${noun} ${target} halted: the plan could not be parsed after a re-ask — status: needs-human.\n` +
-          `   ${err.diagnostic}\n`,
-      );
-      return 1;
-    }
-    if (err instanceof StepTimeoutError) {
-      // A step blew past its deadline and was killed. Committed work stays on
-      // the branch; halt to a human rather than hanging or silently dropping.
-      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
-      process.stdout.write(
-        `\n⚠️  ${noun} ${target} halted: a step exceeded its deadline and was aborted — status: needs-human.\n` +
-          `   ${err.message}\n`,
-      );
-      return 1;
-    }
-    if (err instanceof RunBudgetExceededError) {
-      // The run hit its wall-clock or step-count ceiling. Stop cleanly, keep
-      // committed work, and report which limit tripped.
-      await writeStatus({ fs }, { diabloDir, issue: target, status: "needs-human" });
-      process.stdout.write(
-        `\n⚠️  ${noun} ${target} halted: run budget exceeded — status: needs-human.\n` +
-          `   ${err.message}\n`,
-      );
-      return 1;
-    }
-    throw err;
+    // Map the typed halt into its (status, exitCode, message); an unrecognized
+    // error returns a rethrow marker and propagates as a real crash.
+    const view = classifyRunError(err, noun, target);
+    if (isRethrow(view)) throw err;
+    if (view.status) await writeStatus({ fs }, { diabloDir, issue: target, status: view.status });
+    process.stdout.write(view.message);
+    return view.exitCode;
   } finally {
     // Release the per-issue lock on every exit path — completion, clean halt,
     // or crash. Best-effort and idempotent; only removes a lockfile we own.

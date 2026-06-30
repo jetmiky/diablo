@@ -11,9 +11,10 @@
  */
 import { PiAgent } from "../src/adapters/pi-agent.ts";
 import { NodeProcessRunner } from "../src/adapters/node-process-runner.ts";
+import { resolvePiBinary } from "../src/domain/pi-binary.ts";
 import type { RunSpec } from "../src/domain/run-spec.ts";
 
-const PI = `${process.env.HOME}/.bun/bin/pi`;
+const PI = resolvePiBinary(process.env);
 
 const spec: RunSpec = {
   tier: "worker", // sonnet-4.5:medium
