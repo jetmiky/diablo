@@ -38,6 +38,7 @@ import { bootstrapCommands, type PackageManager } from "../domain/package-manage
 import { huskyArtifacts } from "../domain/husky-hooks.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { StdoutProgress } from "../adapters/stdout-progress.ts";
+import { resolveStdoutCapabilities } from "../domain/stdout-capabilities.ts";
 import { ProgressMdAdapter } from "../adapters/progress-md.ts";
 import { TelegramProgress } from "../adapters/telegram-progress.ts";
 import { TelegramBotClient } from "../adapters/telegram-bot-client.ts";
@@ -87,6 +88,7 @@ Run options (override diablo.config.json, which overrides built-in defaults):
   --planner-model <m>    Override the planner model (e.g. claude-sonnet-4.5)
   --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
   --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
+  --plain                Plain stdout: no colour, no spinner (also via NO_COLOR)
 
 Clean options:
   --force                Remove even if the branch isn't merged (discards work)
@@ -166,8 +168,26 @@ function buildDeps(
  * the committed diablo.config.json. The fan-out swallows any sink failure so
  * progress never halts a run. See domain/telegram-credentials.ts.
  */
-function buildProgress(progressPath: string, issue: string, repoRoot: string): FanOutProgress {
-  const sinks: ProgressPort[] = [new StdoutProgress(), new ProgressMdAdapter(new NodeFs(), progressPath, issue)];
+function buildProgress(
+  progressPath: string,
+  issue: string,
+  repoRoot: string,
+  plain: boolean,
+): FanOutProgress {
+  // Resolve what stdout may do (colour / animation) from the TTY and the
+  // standard env conventions, with --plain forcing the plainest output. The
+  // resolution rule is pure (stdout-capabilities); here we just read the live
+  // process/env into it.
+  const capabilities = resolveStdoutCapabilities({
+    isTty: Boolean(process.stdout.isTTY),
+    noColor: process.env.NO_COLOR !== undefined,
+    forceColor: process.env.FORCE_COLOR !== undefined,
+    plain,
+  });
+  const sinks: ProgressPort[] = [
+    new StdoutProgress(capabilities),
+    new ProgressMdAdapter(new NodeFs(), progressPath, issue),
+  ];
 
   const creds = resolveTelegramCredentials(
     { botToken: process.env.DIABLO_TELEGRAM_BOT_TOKEN, chatId: process.env.DIABLO_TELEGRAM_CHAT_ID },
@@ -359,7 +379,7 @@ async function main(argv: string[]): Promise<number> {
       };
       const issue = parsed.issue ?? (await selectIssue("run"));
       if (issue === undefined) return 2;
-      return executeRun(issue, flags, MASTER_PLAN_FLOW, "issue");
+      return executeRun(issue, flags, MASTER_PLAN_FLOW, "issue", parsed.plain ?? false);
     }
 
     case "plan": {
@@ -379,7 +399,7 @@ async function main(argv: string[]): Promise<number> {
         workerModel: parsed.workerModel,
         verifierModel: parsed.verifierModel,
       };
-      return executeRun(parsed.area, flags, REFACTOR_FLOW, "refactor of");
+      return executeRun(parsed.area, flags, REFACTOR_FLOW, "refactor of", parsed.plain ?? false);
     }
 
     case "intake": {
@@ -535,6 +555,7 @@ async function executeRun(
   flags: { plannerModel?: string; workerModel?: string; verifierModel?: string },
   flow: PlannerFlow,
   noun: string,
+  plain: boolean,
 ): Promise<number> {
   const repoRoot = process.cwd();
   const { config, overrides, skillsDir, runId } = await resolveRunContext(repoRoot, flags);
@@ -558,7 +579,7 @@ async function executeRun(
   if (rejected) return 2;
 
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
-  const progress = buildProgress(progressPath, target, repoRoot);
+  const progress = buildProgress(progressPath, target, repoRoot, plain);
   const deps = buildDeps(repoRoot, overrides, runId, progress, config.limits, config.verify.commands);
 
   // Loud degrade (ADR 0001): with no configured gate commands, a verifying

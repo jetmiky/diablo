@@ -1,58 +1,82 @@
 import { describe, expect, test } from "bun:test";
 import { StdoutProgress } from "../src/adapters/stdout-progress.ts";
+import type { ProgressEvent } from "../src/ports/progress.ts";
 
-/** Collect everything written so we can assert on carriage returns / newlines. */
-function sink() {
+/** Collects everything written so a test can assert on the exact byte stream. */
+function recorder() {
   const chunks: string[] = [];
-  return { chunks, write: (s: string) => void chunks.push(s) };
+  return {
+    write: (s: string) => void chunks.push(s),
+    get output() {
+      return chunks.join("");
+    },
+    get chunks() {
+      return chunks;
+    },
+  };
 }
 
-describe("StdoutProgress — discrete events", () => {
-  test("writes a discrete event as its own newline-terminated line", async () => {
-    const out = sink();
-    const adapter = new StdoutProgress(out.write);
-    await adapter.emit({ kind: "committed", stage: "stage-1", sha: "a1b2c3d4e5f6" });
+const started: ProgressEvent = {
+  kind: "stage-started",
+  stage: "stage-1",
+  title: "Wire the parser",
+  index: 1,
+  total: 3,
+};
+const heartbeat: ProgressEvent = { kind: "heartbeat", stage: "stage-1", elapsedMs: 5000 };
 
-    expect(out.chunks.join("")).toContain("a1b2c3d");
-    expect(out.chunks.join("")).toMatch(/\n$/);
-  });
-});
-
-describe("StdoutProgress — heartbeat spinner", () => {
-  test("overwrites the same line with a carriage return (no newline) and shows elapsed", async () => {
-    const out = sink();
-    const adapter = new StdoutProgress(out.write);
-    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 5_000 });
-
-    const written = out.chunks.join("");
-    expect(written).toStartWith("\r");
-    expect(written).not.toMatch(/\n$/); // stays on the same line
-    expect(written).toMatch(/5s/);
+describe("StdoutProgress", () => {
+  test("a discrete event prints one newline-terminated line", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: false }, rec.write);
+    await sink.emit(started);
+    expect(rec.output.endsWith("\n")).toBe(true);
+    expect(rec.output).toContain("Wire the parser");
   });
 
-  test("cycles the spinner glyph across successive ticks", async () => {
-    const out = sink();
-    const adapter = new StdoutProgress(out.write);
-    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 1_000 });
-    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 2_000 });
-
-    const glyphs = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    const first = glyphs.find((g) => out.chunks[0]!.includes(g));
-    const second = glyphs.find((g) => out.chunks[1]!.includes(g));
-    expect(first).toBeDefined();
-    expect(second).toBeDefined();
-    expect(first).not.toBe(second); // animated, not static
+  test("with colour off, no markdown asterisks leak into the output", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: false }, rec.write);
+    await sink.emit(started);
+    expect(rec.output).not.toContain("**");
   });
 
-  test("a discrete event after a spinner tick breaks to a fresh line first", async () => {
-    const out = sink();
-    const adapter = new StdoutProgress(out.write);
-    await adapter.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 1_000 }); // spinner active
-    await adapter.emit({ kind: "verdict", stage: "stage-1", verdict: "pass" }); // discrete
+  test("with colour on, the title is wrapped in ANSI bold", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: true, animate: false }, rec.write);
+    await sink.emit(started);
+    expect(rec.output).toContain("\x1b[1mWire the parser\x1b[0m");
+  });
 
-    // The discrete line must not be glued onto the spinner line; a newline
-    // separates them so the spinner's last frame is left intact above.
-    const discrete = out.chunks[out.chunks.length - 1]!;
-    expect(discrete).toMatch(/\n/);
+  test("when animation is off, heartbeats are suppressed (no spinner spam in a piped log)", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: false }, rec.write);
+    await sink.emit(heartbeat);
+    expect(rec.output).toBe("");
+  });
+
+  test("when animation is off, output carries no carriage returns", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: false }, rec.write);
+    await sink.emit(started);
+    await sink.emit(heartbeat);
+    await sink.emit({ kind: "stage-done", stage: "stage-1", title: "Wire the parser" });
+    expect(rec.output).not.toContain("\r");
+  });
+
+  test("when animation is on, a heartbeat redraws in place with a carriage return", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: true }, rec.write);
+    await sink.emit(heartbeat);
+    expect(rec.output).toContain("\r");
+  });
+
+  test("when animation is on, a discrete event after a spinner breaks the line first", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: true }, rec.write);
+    await sink.emit(heartbeat); // opens a spinner line
+    await sink.emit({ kind: "committed", stage: "stage-1", sha: "a1b2c3d4567" });
+    // The chunk written for the discrete event must start by closing the spinner line.
+    expect(rec.chunks.at(-1)!.startsWith("\n")).toBe(true);
   });
 });

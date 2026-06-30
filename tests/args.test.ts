@@ -92,6 +92,43 @@ describe("parseArgs", () => {
     }
   });
 
+  test("run without --plain omits the plain field (matches the model-flag convention)", () => {
+    expect(parseArgs(["run", "billing-02"])).toEqual({ command: "run", issue: "billing-02" });
+  });
+
+  test("parses --plain on run", () => {
+    expect(parseArgs(["run", "billing-02", "--plain"])).toEqual({
+      command: "run",
+      issue: "billing-02",
+      plain: true,
+    });
+  });
+
+  test("parses --plain alongside model flags", () => {
+    expect(parseArgs(["run", "billing-02", "--plain", "--worker-model", "w"])).toEqual({
+      command: "run",
+      issue: "billing-02",
+      plain: true,
+      workerModel: "w",
+    });
+  });
+
+  test("parses --plain on a bare run (no issue)", () => {
+    expect(parseArgs(["run", "--plain"])).toEqual({
+      command: "run",
+      issue: undefined,
+      plain: true,
+    });
+  });
+
+  test("parses --plain on refactor", () => {
+    expect(parseArgs(["refactor", "auth-layer", "--plain"])).toEqual({
+      command: "refactor",
+      area: "auth-layer",
+      plain: true,
+    });
+  });
+
   test("parses the init command", () => {
     expect(parseArgs(["init"])).toEqual({ command: "init" });
   });

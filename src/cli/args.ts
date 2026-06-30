@@ -8,6 +8,12 @@ export interface ModelFlagArgs {
   plannerModel?: string;
   workerModel?: string;
   verifierModel?: string;
+  /**
+   * --plain: force the plainest stdout (no colour, no animation) regardless of
+   * TTY. Only present when the flag was passed, mirroring the model-flag
+   * convention so a command built without it omits the field entirely.
+   */
+  plain?: boolean;
 }
 
 export type ParsedArgs =
@@ -133,6 +139,10 @@ function parseModelFlags(
 
   for (let i = 0; i < flags.length; i++) {
     const flag = flags[i]!;
+    if (flag === "--plain") {
+      models.plain = true;
+      continue;
+    }
     if (
       flag === "--planner-model" ||
       flag === "--worker-model" ||
