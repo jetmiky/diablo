@@ -121,7 +121,30 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
         `if you cannot point to evidence. ` +
         VERDICT_INSTRUCTION,
     };
-    return { issue: config.issue, stage: stageId, steps: [finalVerify] };
+    // Recovery worker: the final verification commits nothing and has no worker
+    // in its step list, so a code-fixable FAIL [implementation] there would
+    // otherwise halt unrecoverably after every per-stage verifier passed. This
+    // worker (NOT in the step sequence — only run-stage's retry path invokes it,
+    // with the verifier's feedback) gives the final gate a bounded recovery.
+    const recoveryWorker: Step = {
+      ...base,
+      tier: "worker",
+      skills: config.skills.worker,
+      inputs: [config.planPath],
+      targetFiles: [...new Set(stage.tasks.flatMap((t) => t.targetFiles))],
+      instruction:
+        `The FINAL whole-feature verification for stage ${stage.number} ("${stage.title}") found a ` +
+        `code-level defect against the acceptance criteria of tasks ${taskIds}. Fix the code so the ` +
+        `criteria hold and the typecheck and full test suite pass. Work autonomously: do NOT ask ` +
+        `for approval. Address the verifier's feedback precisely; do not broaden scope.`,
+      commitMessage: `fix(${config.issue}): address final verification for stage ${stage.number}`,
+    };
+    return {
+      issue: config.issue,
+      stage: stageId,
+      steps: [finalVerify],
+      recoveryWorker,
+    };
   }
 
   const notePath = designNotePath(config, stageId);

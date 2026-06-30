@@ -318,4 +318,38 @@ describe("planToIssue verification stages", () => {
     expect(instruction).toMatch(/evidence/i);
     expect(instruction).toMatch(/test name|code path|command output/i);
   });
+
+  // --- issue #2 option A: the final verification stage carries a recoveryWorker
+  // so a code-fixable FAIL [implementation] can route to a bounded worker retry
+  // instead of halting unrecoverably after every per-stage verifier passed. ---
+
+  test("the final verification stage carries a recoveryWorker (worker tier)", () => {
+    const stage = planToIssue(verificationPlan, config).stages[1]!;
+    expect(stage.recoveryWorker).toBeDefined();
+    expect(stage.recoveryWorker!.tier).toBe("worker");
+  });
+
+  test("the recoveryWorker commits (its fix must land) and loads the worker skills", () => {
+    const recovery = planToIssue(verificationPlan, config).stages[1]!.recoveryWorker!;
+    expect(recovery.commitMessage).toBeDefined();
+    expect(recovery.skills).toEqual(config.skills.worker);
+  });
+
+  test("the recoveryWorker is scoped to the relevant tasks' target files", () => {
+    const recovery = planToIssue(verificationPlan, config).stages[1]!.recoveryWorker!;
+    // T-002's target file is package.json in the fixture; the recovery worker
+    // declares the union of the verification stage's tasks' target files.
+    expect(recovery.targetFiles).toContain("package.json");
+  });
+
+  test("the recoveryWorker shares the worktree and reads the frozen plan", () => {
+    const recovery = planToIssue(verificationPlan, config).stages[1]!.recoveryWorker!;
+    expect(recovery.worktree).toBe(config.worktree);
+    expect(recovery.inputs).toContain(config.planPath);
+  });
+
+  test("ordinary (non-verification) stages have no recoveryWorker (they recover via their inline worker)", () => {
+    const stage = planToIssue(verificationPlan, config).stages[0]!;
+    expect(stage.recoveryWorker).toBeUndefined();
+  });
 });

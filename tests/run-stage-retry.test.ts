@@ -153,4 +153,84 @@ describe("runStage retry", () => {
     );
     expect(agent.tiers()).toEqual(["verifier"]); // nothing to re-run
   });
+
+  // --- issue #2: the FINAL whole-feature verification (a planner-tier step with
+  // verifies:true and NO worker in its step list) must be recoverable. A
+  // code-fixable FAIL there routes to the stage's recoveryWorker, then
+  // re-verifies — instead of halting unrecoverably after every stage passed. ---
+
+  function finalVerifyStage(over: Partial<Stage> = {}): Stage {
+    return {
+      issue: "billing-02",
+      stage: "stage-9",
+      steps: [step({ tier: "planner-med", verifies: true, commitMessage: undefined })],
+      recoveryWorker: step({ tier: "worker", commitMessage: "fix(billing-02): final verification recovery" }),
+      ...over,
+    };
+  }
+
+  test("the final verification's implementation FAIL runs the recoveryWorker then re-verifies; a later PASS succeeds", async () => {
+    const agent = new SeqAgent([
+      res("type assertion flagged.\nVERDICT: FAIL [implementation]"),
+      res("removed the assertion"),
+      res("all green.\nVERDICT: PASS"),
+    ]);
+    const git = new SeqGit();
+    const out = await runStage(deps(agent, git), finalVerifyStage(), { limit: 2 });
+
+    // verifier(planner-med) FAIL → recovery worker → re-verify → PASS
+    expect(agent.tiers()).toEqual(["planner-med", "worker", "planner-med"]);
+    expect(git.commits).toHaveLength(1); // the recovery fix committed
+    expect(out.commit).toBe("1".repeat(40));
+  });
+
+  test("the recoveryWorker receives the final verifier's feedback", async () => {
+    const agent = new SeqAgent([
+      res("the parseCurrency cast violates T-008.\nVERDICT: FAIL [implementation]"),
+      res("fixed"),
+      res("VERDICT: PASS"),
+    ]);
+    await runStage(deps(agent, new SeqGit()), finalVerifyStage(), { limit: 2 });
+
+    const recoverySpec = agent.specs[1]!;
+    expect(recoverySpec.tier).toBe("worker");
+    expect(recoverySpec.instruction).toMatch(/parseCurrency|T-008|feedback|previous attempt/i);
+  });
+
+  test("a final-verification [plan] FAIL still halts immediately (never auto-recovers a plan defect)", async () => {
+    const agent = new SeqAgent([res("the plan is wrong.\nVERDICT: FAIL [plan]")]);
+    await expect(
+      runStage(deps(agent, new SeqGit()), finalVerifyStage(), { limit: 3 }),
+    ).rejects.toThrow(VerificationFailedError);
+    expect(agent.tiers()).toEqual(["planner-med"]); // no recovery on a plan defect
+  });
+
+  test("a final verification with NO recoveryWorker halts on FAIL (back-compat)", async () => {
+    const agent = new SeqAgent([res("VERDICT: FAIL [implementation]")]);
+    const stage = finalVerifyStage({ recoveryWorker: undefined });
+    await expect(runStage(deps(agent, new SeqGit()), stage, { limit: 3 })).rejects.toThrow(
+      VerificationFailedError,
+    );
+    expect(agent.tiers()).toEqual(["planner-med"]); // nothing to re-run
+  });
+
+  test("recovery retries are bounded by the limit; exhausting it halts", async () => {
+    const agent = new SeqAgent([
+      res("VERDICT: FAIL [implementation]"),
+      res("fix a"),
+      res("VERDICT: FAIL [implementation]"),
+      res("fix b"),
+      res("VERDICT: FAIL [implementation]"),
+    ]);
+    await expect(
+      runStage(deps(agent, new SeqGit()), finalVerifyStage(), { limit: 2 }),
+    ).rejects.toThrow(VerificationFailedError);
+    expect(agent.tiers()).toEqual([
+      "planner-med",
+      "worker",
+      "planner-med",
+      "worker",
+      "planner-med",
+    ]);
+  });
 });
