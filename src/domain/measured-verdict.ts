@@ -16,11 +16,20 @@
  * Pure (verdict + outcomes in, decision out) so it is unit-tested directly.
  */
 import type { Verdict, VerdictCategory } from "./verdict.ts";
+import { isNothingToCheck } from "./empty-gate-state.ts";
 
 /** The exit code of one gate command run in the worktree. */
 export interface GateOutcome {
   command: string;
   exitCode: number;
+  /**
+   * The command's combined stdout+stderr, when the runner captured it. Used to
+   * recognise a "nothing to check yet" failure (ADR 0004) — an early TDD stage
+   * whose typecheck/test gate exits non-zero ONLY because no source or test
+   * files exist yet. Optional for back-compat: an outcome without it is judged
+   * on exit code alone, exactly as before.
+   */
+  output?: string;
 }
 
 export interface MeasuredVerdict {
@@ -43,7 +52,14 @@ export function combineVerdict(
   // A measured gate failure overrides everything — including a green LLM
   // verdict OR an LLM plan-fail. A failing typecheck/test is a concrete code
   // fault the worker can retry, never a plan defect.
-  const failedGate = gates.find((g) => g.exitCode !== 0);
+  //
+  // EXCEPTION (ADR 0004): a non-zero gate that failed ONLY because there is
+  // nothing to check yet — an empty source tree (tsc TS18003) or an empty test
+  // suite (bun "No tests found!") — is NOT a real failure. An early TDD scaffold
+  // stage legitimately precedes its source/test files. Such an outcome is
+  // skipped here so it cannot fail the stage; a genuine type error or failing
+  // test (any non-empty-state non-zero exit) still has teeth.
+  const failedGate = gates.find((g) => g.exitCode !== 0 && !isNothingToCheck(g.output));
   if (failedGate) {
     return {
       verdict: "fail",

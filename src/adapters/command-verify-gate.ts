@@ -32,7 +32,11 @@ export class CommandVerifyGate implements VerifyGate {
       if (trimmed.length === 0) continue;
       const [bin, ...args] = trimmed.split(/\s+/);
       const result = await this.runner.run(bin!, args, worktree);
-      outcomes.push({ command: trimmed, exitCode: result.exitCode });
+      // Carry the combined output so combineVerdict can recognise a
+      // "nothing to check yet" failure (ADR 0004): an empty source tree
+      // (tsc TS18003) or empty test suite (bun "No tests found!").
+      const output = `${result.stdout}\n${result.stderr}`.trim();
+      outcomes.push({ command: trimmed, exitCode: result.exitCode, output });
     }
     return outcomes;
   }
