@@ -8,6 +8,7 @@
 import type { AgentPort } from "../ports/agent.ts";
 import type { FsPort } from "../ports/fs.ts";
 import type { RunSpec } from "../domain/run-spec.ts";
+import { PLANNER_GUIDANCE } from "./planner-guidance.ts";
 
 export interface PlanSessionDeps {
   agent: AgentPort;
@@ -44,7 +45,7 @@ export async function proposePlan(
     `Propose a staged plan for this issue following the master-plan skill. ` +
     `Write the PROPOSED plan to ${config.planPath}. In your reply, summarize: ` +
     `(a) the approach, (b) what you are deliberately NOT doing, and ` +
-    `(c) self-surfaced risks, assumptions, or open questions.`;
+    `(c) self-surfaced risks, assumptions, or open questions.\n\n${PLANNER_GUIDANCE}`;
 
   const spec: RunSpec = {
     tier: "planner-high",
