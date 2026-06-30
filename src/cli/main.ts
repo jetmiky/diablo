@@ -173,6 +173,7 @@ function buildProgress(
   issue: string,
   repoRoot: string,
   plain: boolean,
+  stepTimeoutMs: number,
 ): FanOutProgress {
   // Resolve what stdout may do (colour / animation) from the TTY and the
   // standard env conventions, with --plain forcing the plainest output. The
@@ -185,7 +186,9 @@ function buildProgress(
     plain,
   });
   const sinks: ProgressPort[] = [
-    new StdoutProgress(capabilities),
+    // stepTimeoutMs lets the live elapsed timer shift colour as a step nears the
+    // ceiling past which it is killed (ADR-aligned: surface a slow step early).
+    new StdoutProgress(capabilities, undefined, stepTimeoutMs),
     new ProgressMdAdapter(new NodeFs(), progressPath, issue),
   ];
 
@@ -579,7 +582,7 @@ async function executeRun(
   if (rejected) return 2;
 
   const progressPath = `${runConfig.worktree}/.plans/${target}-progress.md`;
-  const progress = buildProgress(progressPath, target, repoRoot, plain);
+  const progress = buildProgress(progressPath, target, repoRoot, plain, config.limits.stepTimeoutMs);
   const deps = buildDeps(repoRoot, overrides, runId, progress, config.limits, config.verify.commands);
 
   // Loud degrade (ADR 0001): with no configured gate commands, a verifying

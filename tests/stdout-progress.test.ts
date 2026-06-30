@@ -79,4 +79,56 @@ describe("StdoutProgress", () => {
     // The chunk written for the discrete event must start by closing the spinner line.
     expect(rec.chunks.at(-1)!.startsWith("\n")).toBe(true);
   });
+
+  test("on a TTY, a stage-started line carries a progress bar derived from index/total", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: true }, rec.write);
+    await sink.emit(started);
+    expect(rec.output).toContain("1/3");
+    expect(rec.output).toMatch(/[█░]/); // block glyphs present
+  });
+
+  test("on a non-TTY, the stage line keeps the plain N/total text with no block glyphs", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: false }, rec.write);
+    await sink.emit(started);
+    expect(rec.output).toContain("1/3");
+    expect(rec.output).not.toMatch(/[█░]/);
+  });
+
+  test("an animated heartbeat with a known activity shows that activity's glyph", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: true }, rec.write);
+    await sink.emit({
+      kind: "heartbeat",
+      stage: "stage-1",
+      elapsedMs: 5000,
+      activity: "editing run-step.ts",
+    });
+    expect(rec.output).toContain("✏️");
+    expect(rec.output).toContain("editing run-step.ts");
+  });
+
+  test("the heartbeat does not carry the old double ⏳ marker (spinner is the only leading glyph)", async () => {
+    const rec = recorder();
+    const sink = new StdoutProgress({ colour: false, animate: true }, rec.write);
+    await sink.emit(heartbeat);
+    expect(rec.output).not.toContain("⏳");
+  });
+
+  test("with colour on, a heartbeat well within budget colours the elapsed time green", async () => {
+    const rec = recorder();
+    // 5s elapsed against the default 20m ceiling → green.
+    const sink = new StdoutProgress({ colour: true, animate: true }, rec.write);
+    await sink.emit(heartbeat);
+    expect(rec.output).toContain("\x1b[32m"); // green
+  });
+
+  test("with colour on, a heartbeat near the timeout colours the elapsed time red", async () => {
+    const rec = recorder();
+    const ceiling = 20 * 60 * 1000;
+    const sink = new StdoutProgress({ colour: true, animate: true }, rec.write, ceiling);
+    await sink.emit({ kind: "heartbeat", stage: "stage-1", elapsedMs: 19 * 60 * 1000 });
+    expect(rec.output).toContain("\x1b[31m"); // red
+  });
 });
