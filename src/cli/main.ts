@@ -89,6 +89,7 @@ Run options (override diablo.config.json, which overrides built-in defaults):
   --worker-model <m>     Override the worker model (e.g. claude-haiku-4.5)
   --verifier-model <m>   Override the verifier model (e.g. claude-opus-4.8)
   --plain                Plain stdout: no colour, no spinner (also via NO_COLOR)
+                         (set DIABLO_FUN=0 to keep colour but drop personas)
 
 Clean options:
   --force                Remove even if the branch isn't merged (discards work)
@@ -184,6 +185,9 @@ function buildProgress(
     noColor: process.env.NO_COLOR !== undefined,
     forceColor: process.env.FORCE_COLOR !== undefined,
     plain,
+    // Personality is on by default on a TTY; DIABLO_FUN=0/false/off turns the
+    // persona/flavor wording back to neutral without forcing full --plain.
+    funOff: /^(0|false|off)$/i.test(process.env.DIABLO_FUN ?? ""),
   });
   const sinks: ProgressPort[] = [
     // stepTimeoutMs lets the live elapsed timer shift colour as a step nears the

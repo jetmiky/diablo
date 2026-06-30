@@ -28,12 +28,16 @@ import { renderAnsi } from "../domain/terminal-ansi.ts";
 import { progressBar } from "../domain/progress-bar.ts";
 import { activityGlyph } from "../domain/activity-glyph.ts";
 import { colourByElapsed } from "../domain/elapsed-colour.ts";
+import { personaLine, verdictLine, retryLine, flavorText } from "../domain/persona.ts";
 
 /** Braille spinner frames, cycled one per heartbeat tick. */
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 /** Cells in the stage progress bar. Compact so it fits beside the stage text. */
 const BAR_CELLS = 16;
+
+/** Heartbeat flavor/persona rotation bucket: one new phrase per ~15s. */
+const FLAVOR_BUCKET_MS = 15_000;
 
 export class StdoutProgress implements ProgressPort {
   private readonly capabilities: StdoutCapabilities;
@@ -73,18 +77,48 @@ export class StdoutProgress implements ProgressPort {
   }
 
   /**
-   * Renders a discrete event line. Most events go straight through the shared
-   * markdown formatter; `stage-started` additionally gets a block progress bar
-   * on a TTY (where block glyphs render), keeping the plain `N/total` text the
-   * formatter already produced for a non-TTY.
+   * Renders a discrete event line. When `fun` is on, the tier-running, verdict,
+   * and retry events get persona-flavored wording (stdout-only personality);
+   * otherwise they fall through to the shared neutral markdown formatter — which
+   * is also exactly what the Telegram sink renders. `stage-started` additionally
+   * gets a block progress bar on a TTY, keeping the plain `N/total` text the
+   * formatter produced for a non-TTY.
    */
   private renderDiscrete(event: ProgressEvent): string {
+    if (this.capabilities.fun) {
+      const fun = this.funLine(event);
+      if (fun !== undefined) return fun;
+    }
     const line = renderAnsi(formatEvent(event), this.capabilities.colour);
     if (event.kind === "stage-started" && this.capabilities.animate) {
       const bar = progressBar(event.index, event.total, BAR_CELLS);
       return `${line}  ${bar}`;
     }
     return line;
+  }
+
+  /**
+   * The persona-flavored wording for the events that have a personality, or
+   * undefined for events that keep their neutral rendering. Only consulted when
+   * `fun` is on. The verdict/retry SEMANTICS any log scraping relies on are not
+   * the stdout sink's concern — Telegram and progress.md keep the canonical
+   * "VERDICT PASS" / attempt wording.
+   */
+  private funLine(event: ProgressEvent): string | undefined {
+    switch (event.kind) {
+      case "design-running":
+        return personaLine("design", event.stage, 0);
+      case "worker-running":
+        return personaLine("worker", event.stage, 0);
+      case "verifier-running":
+        return personaLine("verifier", event.stage, 0);
+      case "verdict":
+        return verdictLine(event.verdict, event.stage);
+      case "retry":
+        return retryLine(event.stage, event.attempt);
+      default:
+        return undefined;
+    }
   }
 
   private writeSpinner(event: ProgressEvent & { kind: "heartbeat" }): void {
@@ -98,11 +132,17 @@ export class StdoutProgress implements ProgressPort {
 
   /**
    * Composes the heartbeat line: spinner + the activity's glyph + the activity
-   * label (or "working") + a colour-shifting elapsed timer. The spinner is the
-   * only leading glyph — the old bare `⏳` is gone.
+   * label + a colour-shifting elapsed timer. The spinner is the only leading
+   * glyph — the old bare `⏳` is gone. When no real activity is known, the label
+   * is rotating flavor text (when `fun` is on) or a neutral "working" otherwise;
+   * a known activity always takes precedence over flavor text. The rotation
+   * bucket is a ~15s slice of elapsed time, so the phrase changes slowly rather
+   * than flickering on every 1s tick.
    */
   private heartbeatLine(spinner: string, event: ProgressEvent & { kind: "heartbeat" }): string {
-    const activity = event.activity ?? "working";
+    const bucket = Math.floor(event.elapsedMs / FLAVOR_BUCKET_MS);
+    const activity =
+      event.activity ?? (this.capabilities.fun ? flavorText(event.stage, bucket) : "working");
     const icon = activityGlyph(activity);
     const elapsed = colourByElapsed(
       `${formatDuration(event.elapsedMs)} elapsed`,
