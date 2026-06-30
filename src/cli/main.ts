@@ -570,7 +570,7 @@ async function executeRun(
   if (config.verify.commands.length === 0) {
     process.stdout.write(
       `\n⚠️  No verify.commands configured — verification is LLM-verdict-only (not measured).\n` +
-        `   Add e.g. \"verify\": { \"commands\": ["bun run typecheck", "bun test"] } to diablo.config.json\n` +
+        `   Add e.g. "verify": { "commands": ["bun run typecheck", "bun test"] } to diablo.config.json\n` +
         `   so diablo runs the gates itself and a green verdict can't override a real failure.\n\n`,
     );
   }
