@@ -220,6 +220,36 @@ function buildOverrides(models: ConfigModels): ModelOverrides {
   };
 }
 
+/** The resolved per-run wiring shared by `plan`, `run`, and `refactor`. */
+interface RunContext {
+  config: DiabloConfig;
+  overrides: ModelOverrides;
+  skillsDir: string;
+  runId: string;
+}
+
+/**
+ * Resolves the per-run wiring every command preamble needs: load the config,
+ * apply the model-precedence chain (built-in ← config ← CLI flag), derive the
+ * per-tier overrides, pick the skills dir, and mint a fresh runId. Centralised
+ * so `plan`, `run`, and `refactor` cannot drift in HOW they resolve a run — the
+ * resolution order lives in one place. (`models` is consumed only to build the
+ * overrides, so it is not surfaced on the context.)
+ */
+async function resolveRunContext(
+  repoRoot: string,
+  flags: { plannerModel?: string; workerModel?: string; verifierModel?: string },
+): Promise<RunContext> {
+  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
+  const overrides = buildOverrides(resolveModels(config, flags));
+  return {
+    config,
+    overrides,
+    skillsDir: config.skillsDir ?? SKILLS_DIR,
+    runId: newRunId(),
+  };
+}
+
 /** Which planner flow a run uses — implementation (master-plan) or refactor. */
 interface PlannerFlow {
   /** The vendored skill name injected into the planner step. */
@@ -446,11 +476,7 @@ async function executePlan(
   flags: { plannerModel?: string; workerModel?: string; verifierModel?: string },
 ): Promise<number> {
   const repoRoot = process.cwd();
-  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
-  const models = resolveModels(config, flags);
-  const overrides = buildOverrides(models);
-  const skillsDir = config.skillsDir ?? SKILLS_DIR;
-  const runId = newRunId();
+  const { config, overrides, skillsDir, runId } = await resolveRunContext(repoRoot, flags);
   const worktree = `${repoRoot}/.worktrees/${target}`;
   const planPath = `${worktree}/.plans/${target}-plan.md`;
   const fs = new NodeFs();
@@ -511,11 +537,7 @@ async function executeRun(
   noun: string,
 ): Promise<number> {
   const repoRoot = process.cwd();
-  const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
-  const models = resolveModels(config, flags);
-  const overrides = buildOverrides(models);
-  const skillsDir = config.skillsDir ?? SKILLS_DIR;
-  const runId = newRunId();
+  const { config, overrides, skillsDir, runId } = await resolveRunContext(repoRoot, flags);
   const runConfig = buildRunConfig(
     repoRoot,
     target,
