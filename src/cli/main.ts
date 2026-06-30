@@ -5,7 +5,7 @@
  * GitCli, StdinGate) are assembled here and injected into the use-cases.
  */
 import { parseArgs } from "./args.ts";
-import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { resolveSkillsDir, skillFile } from "../domain/skills-path.ts";
@@ -15,6 +15,12 @@ import { NodeProcessRunner } from "../adapters/node-process-runner.ts";
 import { GitCli } from "../adapters/git-cli.ts";
 import { StdinGate } from "../adapters/stdin-gate.ts";
 import { NodeFs } from "../adapters/node-fs.ts";
+import { NodeDir } from "../adapters/node-dir.ts";
+import {
+  resolveTicketPaths,
+  discoverIssues,
+  firstTicketPath,
+} from "../app/issue-discovery.ts";
 import {
   acquireRunLock,
   RunLockedError,
@@ -100,44 +106,11 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const SKILLS_DIR = resolveSkillsDir(MODULE_DIR, (p) => existsSync(p));
 
 /**
- * Resolves a ticket location into concrete file paths for @-injection. Pi's
- * @file reads files, not directories (a directory crashes it with EISDIR), so
- * a directory is expanded to the .md files directly inside it.
+ * The live directory-listing adapter, shared by the issue-discovery helpers
+ * (resolveTicketPaths / discoverIssues / firstTicketPath). Stateless, so a
+ * single instance is reused across the CLI's discovery calls.
  */
-function resolveTicketPaths(location: string): string[] {
-  let isDir = false;
-  try {
-    isDir = statSync(location).isDirectory();
-  } catch {
-    return [location]; // let the downstream read surface a clear ENOENT
-  }
-  if (!isDir) return [location];
-  return readdirSync(location)
-    .filter((name) => name.endsWith(".md"))
-    .sort()
-    .map((name) => `${location}/${name}`);
-}
-
-/**
- * Discovers the candidate issue targets under .scratch/ — the immediate entries
- * (a subdirectory of ticket files, or a single .md ticket). This is the same
- * `.scratch/<issue>` convention `run <issue>` resolves against, so the selector
- * offers exactly what `run`/`plan` can target. Returns sorted names with any
- * trailing .md stripped (so the selection round-trips back to a target).
- */
-function discoverIssues(repoRoot: string): string[] {
-  const scratch = `${repoRoot}/.scratch`;
-  let entries: string[];
-  try {
-    entries = readdirSync(scratch);
-  } catch {
-    return [];
-  }
-  return entries
-    .filter((name) => !name.startsWith("."))
-    .map((name) => (name.endsWith(".md") ? name.slice(0, -3) : name))
-    .sort();
-}
+const DIR = new NodeDir();
 
 function buildDeps(
   repoRoot: string,
@@ -264,7 +237,7 @@ const MASTER_PLAN_FLOW: PlannerFlow = {
   instruction: (planPath) =>
     `Create the frozen master plan for this issue following the master-plan skill. ` +
     `Break the ticket(s) into sequenced stages and T-00X tasks, and write the plan to ${planPath}.`,
-  ticketPaths: (repoRoot, issue) => resolveTicketPaths(`${repoRoot}/.scratch/${issue}`),
+  ticketPaths: (repoRoot, issue) => resolveTicketPaths(DIR, `${repoRoot}/.scratch/${issue}`),
   planStem: "plan",
 };
 
@@ -277,7 +250,7 @@ const REFACTOR_FLOW: PlannerFlow = {
     `the plan to ${planPath}. End with a final "Verification" stage.`,
   // A refactor's "ticket" is the area description in .scratch/<area>/ if present;
   // resolveTicketPaths falls back to the path itself so a missing dir surfaces clearly.
-  ticketPaths: (repoRoot, area) => resolveTicketPaths(`${repoRoot}/.scratch/${area}`),
+  ticketPaths: (repoRoot, area) => resolveTicketPaths(DIR, `${repoRoot}/.scratch/${area}`),
   planStem: "refactor-plan",
 };
 
@@ -427,7 +400,7 @@ async function selectIssue(context: SelectorContext): Promise<string | undefined
   }
 
   const config = await loadConfig({ fs: new NodeFs() }, `${repoRoot}/${CONFIG_FILENAME}`);
-  const names = discoverIssues(repoRoot);
+  const names = discoverIssues(DIR, repoRoot);
   if (names.length === 0) {
     process.stderr.write(`error: no issues found under .scratch/. Run \`diablo intake <feature>\` first.\n`);
     return undefined;
@@ -509,7 +482,7 @@ async function executePlan(
       issue: target,
       worktree,
       planPath,
-      ticketPaths: resolveTicketPaths(`${repoRoot}/.scratch/${target}`),
+      ticketPaths: resolveTicketPaths(DIR, `${repoRoot}/.scratch/${target}`),
       plannerSkills: [skillFile(skillsDir, "master-plan")],
       runId,
       diabloDir: diabloDirFor(repoRoot),
@@ -604,7 +577,7 @@ async function executeRun(
     const decision = await finalizeIssue(
       { fs },
       {
-        issuePath: firstTicketPath(repoRoot, target),
+        issuePath: firstTicketPath(DIR, repoRoot, target),
         diabloDir,
         issue: target,
         verdict: "pass",
@@ -655,12 +628,6 @@ async function rejectIfDraftPlan(
   return true;
 }
 
-/** The first ticket file for an issue — the acceptance-criteria source the done gate reads. */
-function firstTicketPath(repoRoot: string, issue: string): string {
-  const paths = resolveTicketPaths(`${repoRoot}/.scratch/${issue}`);
-  return paths[0] ?? `${repoRoot}/.scratch/${issue}`;
-}
-
 /** The final verification step's text — the last step of the last stage. */
 function finalVerifierText(result: RunDiabloResult): string {
   const lastStage = result.stages.at(-1);
@@ -681,7 +648,7 @@ async function warnUnmergedPriorWork(
   fs: NodeFs,
   git: GitCli,
 ): Promise<void> {
-  const others = discoverIssues(repoRoot).filter((name) => name !== current);
+  const others = discoverIssues(DIR, repoRoot).filter((name) => name !== current);
   const diabloDir = diabloDirFor(repoRoot);
   const unmerged: string[] = [];
 
