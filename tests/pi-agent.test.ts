@@ -141,16 +141,43 @@ describe("PiAgent activity streaming", () => {
     expect(activities).toEqual(["reading run-step.ts", "running `bun test`"]);
   });
 
-  test("ignores non-tool lines (no activity for streaming noise)", async () => {
+  test("surfaces an assistant text/thinking delta as a thought activity label", async () => {
     const activities: string[] = [];
     const runner = new StreamingRunner([
-      `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hi"}}`,
+      `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"Let me check the parser"}}`,
+      agentEndLine,
+    ]);
+    const agent = new PiAgent("pi", runner);
+    await agent.run(spec, (activity) => activities.push(activity));
+
+    expect(activities).toEqual(["Let me check the parser"]);
+  });
+
+  test("ignores genuine streaming noise (a non-delta event yields no activity)", async () => {
+    const activities: string[] = [];
+    const runner = new StreamingRunner([
+      `{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0}}`,
       agentEndLine,
     ]);
     const agent = new PiAgent("pi", runner);
     await agent.run(spec, (activity) => activities.push(activity));
 
     expect(activities).toEqual([]);
+  });
+
+  test("tool activity takes precedence over a thought on the same line stream", async () => {
+    const activities: string[] = [];
+    const runner = new StreamingRunner([
+      `{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"hmm"}}`,
+      toolStart("edit", { path: "run-step.ts" }),
+      agentEndLine,
+    ]);
+    const agent = new PiAgent("pi", runner);
+    await agent.run(spec, (activity) => activities.push(activity));
+
+    // Both surface in order; the tool label is a concrete action, the thought a
+    // reasoning tick — the heartbeat shows whichever arrived most recently.
+    expect(activities).toEqual(["hmm", "editing run-step.ts"]);
   });
 
   test("runs fine when no onActivity callback is given (additive, optional)", async () => {

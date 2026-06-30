@@ -10,11 +10,13 @@
  * "writing"/"running"/"searching"/"finding"/"listing"). Presentation stays in
  * this render-layer helper; the domain label stays text-only.
  *
- * Pure and total: an unrecognised or empty label degrades to a generic gear
- * rather than throwing.
+ * Pure and total: an unrecognised or empty label degrades to the thinking glyph
+ * rather than throwing. In the real pipeline `pi-activity` always emits a known
+ * leading verb (unknown tools become `running <tool>`), so the fallback only
+ * fires for a Pi thought line or rotating flavor text — 💭 fits both.
  */
 
-const GENERIC = "⚙️";
+const GENERIC = "💭";
 
 const VERB_GLYPHS: Record<string, string> = {
   editing: "✏️",

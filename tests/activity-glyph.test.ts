@@ -12,18 +12,20 @@ describe("activityGlyph", () => {
     expect(activityGlyph("listing src")).toBe("📂");
   });
 
-  test("an unknown verb falls back to a generic gear glyph", () => {
-    // pi-activity emits `running <tool>` for unknown tools, which maps to ⚡;
-    // a truly unrecognised label (no known leading verb) gets the gear.
-    expect(activityGlyph("frobnicating widgets")).toBe("⚙️");
+  test("a non-verb label (a thought or flavor text) falls back to the thinking glyph", () => {
+    // pi-activity always emits a known leading verb (unknown tools become
+    // `running <tool>` → ⚡), so a label with no known verb is a Pi thought or
+    // flavor text — 💭 reads better there than a generic gear.
+    expect(activityGlyph("Let me check the parser")).toBe("💭");
+    expect(activityGlyph("frobnicating widgets")).toBe("💭");
   });
 
   test("matches the leading verb case-insensitively and ignores extra prose", () => {
     expect(activityGlyph("Editing something")).toBe("✏️");
   });
 
-  test("an empty or whitespace label gets the generic glyph (never throws)", () => {
-    expect(activityGlyph("")).toBe("⚙️");
-    expect(activityGlyph("   ")).toBe("⚙️");
+  test("an empty or whitespace label gets the thinking glyph (never throws)", () => {
+    expect(activityGlyph("")).toBe("💭");
+    expect(activityGlyph("   ")).toBe("💭");
   });
 });
