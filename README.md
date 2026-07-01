@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/diablo.jpg" alt="Diablo" width="100%">
+</p>
+
 # Diablo
 
 A central conductor that runs your skills through the [Pi coding agent](https://github.com/earendil-works/pi) in isolated git worktrees, stopping at human gates and handing work off as git commits.
