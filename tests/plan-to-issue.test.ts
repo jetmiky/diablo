@@ -39,6 +39,7 @@ const config: PlanToIssueConfig = {
   issue: "onboarding-cleanup",
   worktree: "/proj/.worktrees/onboarding-cleanup",
   planPath: "/proj/.plans/onboarding-cleanup-plan.md",
+  ticketPaths: ["/proj/.scratch/onboarding-cleanup/01-cleanup.md"],
   skills: { designer: ["/skills/tdd/SKILL.md"], worker: ["/skills/tdd/SKILL.md"], verifier: [] },
 };
 
@@ -285,10 +286,10 @@ describe("planToIssue verification stages", () => {
     expect(stage.steps[0]!.commitMessage).toBeUndefined();
   });
 
-  test("a verification stage's verifier names the stage and its task ids", () => {
+  test("a verification stage's verifier names the stage and references the issue ticket", () => {
     const verifier = planToIssue(verificationPlan, config).stages[1]!.steps[0]!;
     expect(verifier.instruction).toContain("stage 2");
-    expect(verifier.instruction).toContain("T-002");
+    expect(verifier.instruction.toLowerCase()).toContain("issue ticket");
   });
 
   test("non-verification stages are unaffected (design, worker, then verifier)", () => {

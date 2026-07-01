@@ -103,22 +103,22 @@ describe("buildPiArgs model overrides", () => {
   // the defaults. Overrides are per-tier; an unspecified tier keeps its default.
   test("an override replaces the model for the matching tier", () => {
     const args = buildPiArgs(baseSpec, {
-      worker: { model: "claude-haiku-4.5", thinking: "medium" },
+      worker: { provider: "9router", model: "kr/claude-haiku-4.5", thinking: "medium" },
     });
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-haiku-4.5:medium");
   });
 
   test("an override for a different tier leaves this tier's default intact", () => {
     const args = buildPiArgs(baseSpec, {
-      "planner-high": { model: "claude-sonnet-4.5", thinking: "high" },
+      "planner-high": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" },
     });
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-sonnet-4.5:medium");
   });
 
   test("overrides apply per tier across planner and worker", () => {
     const overrides = {
-      "planner-high": { model: "claude-sonnet-4.5", thinking: "high" as const },
-      worker: { model: "claude-haiku-4.5", thinking: "medium" as const },
+      "planner-high": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" as const },
+      worker: { provider: "9router", model: "kr/claude-haiku-4.5", thinking: "medium" as const },
     };
     const planner = buildPiArgs({ ...baseSpec, tier: "planner-high" }, overrides);
     const worker = buildPiArgs(baseSpec, overrides);

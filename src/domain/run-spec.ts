@@ -33,7 +33,10 @@ export interface RunSpec {
   runId?: string;
 }
 
-interface ModelSpec {
+export interface ModelSpec {
+  /** The Pi provider name (e.g. "9router"). Read from diablo.config.json. */
+  provider: string;
+  /** The model identifier including sub-path (e.g. "kr/claude-opus-4.8" or "mimo/mimo-v2.5-pro"). */
   model: string;
   thinking: "high" | "medium";
 }
@@ -45,13 +48,13 @@ interface ModelSpec {
  */
 export type ModelOverrides = Partial<Record<Tier, ModelSpec>>;
 
-const PROVIDER = "9router/kr";
+const DEFAULT_PROVIDER = "9router";
 
 const TIER_MODELS: Record<Tier, ModelSpec> = {
-  "planner-high": { model: "claude-opus-4.8", thinking: "high" },
-  "planner-med": { model: "claude-opus-4.8", thinking: "medium" },
-  worker: { model: "claude-sonnet-4.5", thinking: "medium" },
-  verifier: { model: "claude-sonnet-4.5", thinking: "medium" },
+  "planner-high": { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "high" },
+  "planner-med": { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "medium" },
+  worker: { provider: DEFAULT_PROVIDER, model: "kr/claude-sonnet-4.5", thinking: "medium" },
+  verifier: { provider: DEFAULT_PROVIDER, model: "kr/claude-sonnet-4.5", thinking: "medium" },
 };
 
 /** The role segment of the deterministic session id. */
@@ -64,7 +67,7 @@ const TIER_ROLES: Record<Tier, string> = {
 
 export function modelFor(tier: Tier, overrides: ModelOverrides = {}): string {
   const spec = overrides[tier] ?? TIER_MODELS[tier];
-  return `${PROVIDER}/${spec.model}:${spec.thinking}`;
+  return `${spec.provider}/${spec.model}:${spec.thinking}`;
 }
 
 /**

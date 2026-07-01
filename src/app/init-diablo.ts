@@ -84,10 +84,25 @@ function isPackageManager(value: string): value is PackageManager {
 /**
  * Writes a default config, but only if one does not already exist — re-running
  * init must never clobber a config the user has since edited.
+ *
+ * The scaffolded JSON uses the canonical config key names (snake_case for
+ * default_provider / default_model, camelCase for the rest) so it round-trips
+ * through parseConfig without surprises.
  */
 async function scaffoldConfig(fs: FsPort, configPath: string): Promise<void> {
   if (await fs.exists(configPath)) return;
-  const json = JSON.stringify(defaultConfig(), null, 2) + "\n";
+  const d = defaultConfig();
+  const scaffold = {
+    default_provider: d.defaultProvider,
+    default_model: d.defaultModel,
+    models: d.models,
+    integration: d.integration,
+    gate: d.gate,
+    retry: d.retry,
+    limits: d.limits,
+    verify: d.verify,
+  };
+  const json = JSON.stringify(scaffold, null, 2) + "\n";
   await fs.write(configPath, json);
 }
 

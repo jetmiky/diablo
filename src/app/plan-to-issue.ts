@@ -30,6 +30,10 @@ export interface PlanToIssueConfig {
   worktree: string;
   /** Absolute path to the frozen plan file, injected as an input to every step. */
   planPath: string;
+  /** Ticket file paths under .scratch, injected into the final verification step
+   *  so the verifier checks against the issue's acceptance criteria (not the
+   *  plan's task-level criteria, which the done gate does not compare against). */
+  ticketPaths: string[];
   skills: {
     /** Skills for the per-stage design step (planner-med). */
     designer: string[];
@@ -104,19 +108,24 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
   if (isVerificationStage(stage)) {
     const finalVerify: Step = {
       ...base,
+      // Include issue ticket(s) so the verifier reads the acceptance criteria
+      // from the ticket — these are what the done gate compares the CRITERIA
+      // checklist against (not the plan's task-level criteria).
+      inputs: [config.planPath, ...config.ticketPaths],
       tier: "planner-med",
       skills: config.skills.verifier,
       verifies: true,
       gate: verifyGate,
       instruction:
         `Perform the FINAL verification for stage ${stage.number} ("${stage.title}"): a holistic ` +
-        `judgment over the WHOLE feature, not a single stage's diff. Check the committed work ` +
-        `against the acceptance criteria of tasks ${taskIds} in the plan. ` +
+        `judgment over the WHOLE feature, not a single stage's diff. Read the original issue ` +
+        `ticket(s) to find the acceptance criteria, then check the committed work against THOSE ` +
+        `criteria (not the plan's task-level criteria). ` +
         `You MUST actually run the project's gates, not just read the diff: run the typecheck ` +
         `(e.g. the "typecheck" script, or tsc --noEmit) AND the full test suite, and report what ` +
         `they output. A type error or a failing test — anywhere — is a FAIL. Do not modify code. ` +
         `Before the VERDICT line, emit a CRITERIA: checklist with one checkbox line per acceptance ` +
-        `criterion from the relevant tasks, marking each [x] (checked) when you can cite concrete ` +
+        `criterion from the issue ticket, marking each [x] (checked) when you can cite concrete ` +
         `evidence (a test name, code path, or command output) that proves it, or [ ] (unchecked) ` +
         `if you cannot point to evidence. ` +
         VERDICT_INSTRUCTION,

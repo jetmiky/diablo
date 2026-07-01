@@ -35,14 +35,23 @@ describe("loadConfig", () => {
   });
 
   test("reads and parses an existing config file", async () => {
-    const fs = new FakeFs({ [PATH]: '{ "gate": "none", "models": { "worker": "haiku" } }' });
+    const fs = new FakeFs({
+      [PATH]: '{ "default_provider": "9router", "default_model": "mimo/mimo-v2.5-pro", "gate": "none", "models": { "worker": { "model": "haiku" } } }',
+    });
     const cfg = await loadConfig(deps(fs), PATH);
     expect(cfg.gate).toBe("none");
-    expect(cfg.models.worker).toBe("haiku");
+    expect(cfg.defaultProvider).toBe("9router");
+    expect(cfg.defaultModel).toBe("mimo/mimo-v2.5-pro");
+    expect(cfg.models.worker).toEqual({ model: "haiku" });
   });
 
   test("propagates a clear error for a malformed config file", async () => {
     const fs = new FakeFs({ [PATH]: "{ not json" });
     await expect(loadConfig(deps(fs), PATH)).rejects.toThrow(/config.*json|json/i);
+  });
+
+  test("propagates the error when required fields are missing", async () => {
+    const fs = new FakeFs({ [PATH]: '{ "gate": "none" }' });
+    await expect(loadConfig(deps(fs), PATH)).rejects.toThrow(/default_provider/i);
   });
 });

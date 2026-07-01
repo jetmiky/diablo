@@ -33,7 +33,7 @@ import { initDiablo } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { setupTelegram } from "../app/setup-telegram.ts";
 import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
-import { resolveModels, type ConfigModels, type ConfigLimits, type DiabloConfig } from "../domain/config.ts";
+import { resolveModels, type ResolvedModels, type ConfigLimits, type DiabloConfig } from "../domain/config.ts";
 import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
 import { huskyArtifacts } from "../domain/husky-hooks.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
@@ -232,18 +232,17 @@ function newRunId(): string {
 }
 
 /**
- * Builds per-tier model overrides from the RESOLVED model names (built-in <-
- * config <- CLI flag, computed by resolveModels). Only the model name is
- * swapped; each tier keeps its default thinking level (planner-high → high,
- * planner-med → medium, worker/verifier → medium), so pointing a tier at a
- * smaller model never loses the tier's thinking budget.
+ * Builds per-tier model overrides from the RESOLVED models (built-in <-
+ * config <- CLI flag, computed by resolveModels). Each role carries its own
+ * provider and model; the thinking level is set per-tier (planner-high ->
+ * high, planner-med -> medium, worker/verifier -> medium).
  */
-function buildOverrides(models: ConfigModels): ModelOverrides {
+function buildOverrides(models: ResolvedModels): ModelOverrides {
   return {
-    "planner-high": { model: models.planner, thinking: "high" },
-    "planner-med": { model: models.planner, thinking: "medium" },
-    worker: { model: models.worker, thinking: "medium" },
-    verifier: { model: models.verifier, thinking: "medium" },
+    "planner-high": { provider: models.planner.provider, model: models.planner.model, thinking: "high" },
+    "planner-med": { provider: models.planner.provider, model: models.planner.model, thinking: "medium" },
+    worker: { provider: models.worker.provider, model: models.worker.model, thinking: "medium" },
+    verifier: { provider: models.verifier.provider, model: models.verifier.model, thinking: "medium" },
   };
 }
 

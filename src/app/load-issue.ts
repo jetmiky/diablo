@@ -70,6 +70,7 @@ export async function loadIssue(deps: LoadIssueDeps, config: LoadIssueConfig): P
     issue: config.issue,
     worktree: config.worktree,
     planPath: config.planPath,
+    ticketPaths: config.ticketPaths,
     skills: {
       designer: config.skills.designer,
       worker: config.skills.worker,

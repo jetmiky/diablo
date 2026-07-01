@@ -5,7 +5,6 @@ import {
   defaultConfig,
   type DiabloConfig,
 } from "../src/domain/config.ts";
-import { defaultModelName } from "../src/domain/run-spec.ts";
 
 /**
  * The config layer is pure: parsing JSON text into a fully-defaulted config,
@@ -13,11 +12,22 @@ import { defaultModelName } from "../src/domain/run-spec.ts";
  * No filesystem here — the loader use-case sequences the read around these.
  */
 describe("parseConfig", () => {
-  test("applies built-in defaults when the config is an empty object", () => {
-    const cfg = parseConfig("{}");
-    expect(cfg.models.planner).toBe(defaultModelName("planner-high"));
-    expect(cfg.models.worker).toBe(defaultModelName("worker"));
-    expect(cfg.models.verifier).toBe(defaultModelName("verifier"));
+  const MINIMAL = '{ "default_provider": "9router", "default_model": "kr/claude-sonnet-4.5" }';
+
+  test("requires default_provider", () => {
+    expect(() => parseConfig("{}")).toThrow(/default_provider/i);
+    expect(() => parseConfig('{ "default_model": "x" }')).toThrow(/default_provider/i);
+  });
+
+  test("requires default_model", () => {
+    expect(() => parseConfig('{ "default_provider": "9router" }')).toThrow(/default_model/i);
+  });
+
+  test("applies built-in defaults for optional fields when only required fields are set", () => {
+    const cfg = parseConfig(MINIMAL);
+    expect(cfg.defaultProvider).toBe("9router");
+    expect(cfg.defaultModel).toBe("kr/claude-sonnet-4.5");
+    expect(cfg.models).toEqual({});
     expect(cfg.integration.targetBranch).toBe("main");
     expect(cfg.integration.branchPrefix).toBe("diablo/");
     expect(cfg.integration.autoMerge).toBe(false);
@@ -25,20 +35,22 @@ describe("parseConfig", () => {
     expect(cfg.retry.limit).toBe(2);
   });
 
-  test("matches defaultConfig() for an empty object", () => {
-    expect(parseConfig("{}")).toEqual(defaultConfig());
-  });
-
   test("overrides only the keys present, keeping defaults for the rest", () => {
-    const cfg = parseConfig('{ "models": { "worker": "claude-haiku-4.5" } }');
-    expect(cfg.models.worker).toBe("claude-haiku-4.5");
-    expect(cfg.models.planner).toBe(defaultModelName("planner-high")); // untouched
+    const cfg = parseConfig(`{
+      "default_provider": "anthropic",
+      "default_model": "claude-sonnet-4-20250514",
+      "models": { "worker": { "model": "claude-haiku-4.5" } }
+    }`);
+    expect(cfg.defaultProvider).toBe("anthropic");
+    expect(cfg.defaultModel).toBe("claude-sonnet-4-20250514");
+    expect(cfg.models.worker).toEqual({ model: "claude-haiku-4.5" });
+    expect(cfg.models.planner).toBeUndefined();
     expect(cfg.integration.autoMerge).toBe(false); // untouched
   });
 
   test("reads integration and gate overrides", () => {
     const cfg = parseConfig(
-      '{ "integration": { "targetBranch": "develop", "autoMerge": true }, "gate": "none" }',
+      `{ "default_provider": "9router", "default_model": "m", "integration": { "targetBranch": "develop", "autoMerge": true }, "gate": "none" }`,
     );
     expect(cfg.integration.targetBranch).toBe("develop");
     expect(cfg.integration.autoMerge).toBe(true);
@@ -47,59 +59,59 @@ describe("parseConfig", () => {
   });
 
   test("reads the skills path override", () => {
-    const cfg = parseConfig('{ "skillsDir": "/custom/skills" }');
+    const cfg = parseConfig(`{ "default_provider": "p", "default_model": "m", "skillsDir": "/custom/skills" }`);
     expect(cfg.skillsDir).toBe("/custom/skills");
   });
 
   test("leaves skillsDir undefined by default (resolver decides)", () => {
-    expect(parseConfig("{}").skillsDir).toBeUndefined();
+    expect(parseConfig(MINIMAL).skillsDir).toBeUndefined();
   });
 
   test("reads a retry limit override", () => {
-    expect(parseConfig('{ "retry": { "limit": 5 } }').retry.limit).toBe(5);
+    expect(parseConfig(`{ "default_provider": "p", "default_model": "m", "retry": { "limit": 5 } }`).retry.limit).toBe(5);
   });
 
   test("defaults limits to generous values that won't false-trip a normal run", () => {
-    const cfg = parseConfig("{}");
-    // A long-but-bounded step ceiling and a whole-run ceiling. Defaults are
-    // generous; they exist to stop a pathological hang/runaway, not normal runs.
-    expect(cfg.limits.stepTimeoutMs).toBe(20 * 60 * 1000); // 20 min per step
-    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000); // 4 h per run
-    expect(cfg.limits.maxSteps).toBe(200); // step-count circuit breaker
+    const cfg = parseConfig(MINIMAL);
+    expect(cfg.limits.stepTimeoutMs).toBe(20 * 60 * 1000);
+    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000);
+    expect(cfg.limits.maxSteps).toBe(200);
   });
 
   test("reads limits overrides, keeping defaults for the rest", () => {
-    const cfg = parseConfig('{ "limits": { "stepTimeoutMs": 60000 } }');
+    const cfg = parseConfig(`{ "default_provider": "p", "default_model": "m", "limits": { "stepTimeoutMs": 60000 } }`);
     expect(cfg.limits.stepTimeoutMs).toBe(60000);
-    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000); // default kept
-    expect(cfg.limits.maxSteps).toBe(200); // default kept
+    expect(cfg.limits.runBudgetMs).toBe(4 * 60 * 60 * 1000);
+    expect(cfg.limits.maxSteps).toBe(200);
   });
 
   test("rejects a non-positive step timeout", () => {
-    expect(() => parseConfig('{ "limits": { "stepTimeoutMs": 0 } }')).toThrow(/stepTimeoutMs/i);
-    expect(() => parseConfig('{ "limits": { "stepTimeoutMs": -5 } }')).toThrow(/stepTimeoutMs/i);
+    const base = '{ "default_provider": "p", "default_model": "m", ';
+    expect(() => parseConfig(base + '"limits": { "stepTimeoutMs": 0 } }')).toThrow(/stepTimeoutMs/i);
+    expect(() => parseConfig(base + '"limits": { "stepTimeoutMs": -5 } }')).toThrow(/stepTimeoutMs/i);
   });
 
   test("rejects a non-positive run budget and a non-positive maxSteps", () => {
-    expect(() => parseConfig('{ "limits": { "runBudgetMs": 0 } }')).toThrow(/runBudgetMs/i);
-    expect(() => parseConfig('{ "limits": { "maxSteps": 0 } }')).toThrow(/maxSteps/i);
+    const base = '{ "default_provider": "p", "default_model": "m", ';
+    expect(() => parseConfig(base + '"limits": { "runBudgetMs": 0 } }')).toThrow(/runBudgetMs/i);
+    expect(() => parseConfig(base + '"limits": { "maxSteps": 0 } }')).toThrow(/maxSteps/i);
   });
 
   test("defaults verify.commands to empty (no deterministic gate until configured)", () => {
-    expect(parseConfig("{}").verify.commands).toEqual([]);
+    expect(parseConfig(MINIMAL).verify.commands).toEqual([]);
   });
 
   test("reads verify.commands as a list of gate commands", () => {
-    const cfg = parseConfig('{ "verify": { "commands": ["bun run typecheck", "bun test"] } }');
+    const cfg = parseConfig(`{ "default_provider": "p", "default_model": "m", "verify": { "commands": ["bun run typecheck", "bun test"] } }`);
     expect(cfg.verify.commands).toEqual(["bun run typecheck", "bun test"]);
   });
 
   test("rejects a non-array verify.commands", () => {
-    expect(() => parseConfig('{ "verify": { "commands": "bun test" } }')).toThrow(/verify\.commands/i);
+    expect(() => parseConfig(`{ "default_provider": "p", "default_model": "m", "verify": { "commands": "bun test" } }`)).toThrow(/verify\.commands/i);
   });
 
   test("rejects non-string entries in verify.commands", () => {
-    expect(() => parseConfig('{ "verify": { "commands": ["bun test", 42] } }')).toThrow(/verify\.commands/i);
+    expect(() => parseConfig(`{ "default_provider": "p", "default_model": "m", "verify": { "commands": ["bun test", 42] } }`)).toThrow(/verify\.commands/i);
   });
 
   test("throws a clear error on malformed JSON", () => {
@@ -107,53 +119,148 @@ describe("parseConfig", () => {
   });
 
   test("rejects an unknown gate value", () => {
-    expect(() => parseConfig('{ "gate": "bogus" }')).toThrow(/gate/i);
+    expect(() => parseConfig(`{ "default_provider": "p", "default_model": "m", "gate": "bogus" }`)).toThrow(/gate/i);
   });
 
   test("rejects a non-object top-level config", () => {
     expect(() => parseConfig("[]")).toThrow(/config/i);
     expect(() => parseConfig("42")).toThrow(/config/i);
   });
+
+  describe("per-role model overrides", () => {
+    test("accepts string shorthand (backward compat: model only)", () => {
+      const cfg = parseConfig(`{
+        "default_provider": "9router",
+        "default_model": "kr/claude-sonnet-4.5",
+        "models": { "worker": "haiku", "verifier": "opus" }
+      }`);
+      expect(cfg.models.worker).toEqual({ model: "haiku" });
+      expect(cfg.models.verifier).toEqual({ model: "opus" });
+      expect(cfg.models.planner).toBeUndefined();
+    });
+
+    test("accepts object form with provider and model", () => {
+      const cfg = parseConfig(`{
+        "default_provider": "9router",
+        "default_model": "kr/claude-sonnet-4.5",
+        "models": {
+          "planner": { "provider": "openrouter", "model": "deepseek/r1" },
+          "worker": { "model": "qwen/qwen3-235b" }
+        }
+      }`);
+      expect(cfg.models.planner).toEqual({ provider: "openrouter", model: "deepseek/r1" });
+      expect(cfg.models.worker).toEqual({ model: "qwen/qwen3-235b" });
+      expect(cfg.models.verifier).toBeUndefined();
+    });
+
+    test("accepts empty object for a role (inherits all defaults)", () => {
+      const cfg = parseConfig(`{
+        "default_provider": "9router",
+        "default_model": "kr/claude-sonnet-4.5",
+        "models": { "verifier": {} }
+      }`);
+      expect(cfg.models.verifier).toEqual({});
+    });
+
+    test("rejects non-string provider in a role override", () => {
+      expect(() => parseConfig(`{
+        "default_provider": "p", "default_model": "m",
+        "models": { "worker": { "provider": 42 } }
+      }`)).toThrow(/models\.worker\.provider/i);
+    });
+
+    test("rejects non-string model in a role override", () => {
+      expect(() => parseConfig(`{
+        "default_provider": "p", "default_model": "m",
+        "models": { "planner": { "model": true } }
+      }`)).toThrow(/models\.planner\.model/i);
+    });
+
+    test("rejects invalid role entry type", () => {
+      expect(() => parseConfig(`{
+        "default_provider": "p", "default_model": "m",
+        "models": { "worker": 42 }
+      }`)).toThrow(/models\.worker/i);
+    });
+  });
 });
 
 describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
-  const config: DiabloConfig = defaultConfig();
+  const MINIMAL_JSON = '{ "default_provider": "9router", "default_model": "kr/claude-sonnet-4.5" }';
 
-  test("with no config models set and no flags, uses built-in defaults", () => {
+  test("with no per-role overrides and no flags, uses defaults", () => {
+    const config = parseConfig(MINIMAL_JSON);
     const models = resolveModels(config, {});
-    expect(models.planner).toBe(defaultModelName("planner-high"));
-    expect(models.worker).toBe(defaultModelName("worker"));
-    expect(models.verifier).toBe(defaultModelName("verifier"));
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
   });
 
-  test("config model overrides the built-in default", () => {
-    const cfg: DiabloConfig = {
-      ...config,
-      models: { planner: "opus-x", worker: "haiku-y", verifier: "sonnet-z" },
-    };
-    const models = resolveModels(cfg, {});
-    expect(models.planner).toBe("opus-x");
-    expect(models.worker).toBe("haiku-y");
-    expect(models.verifier).toBe("sonnet-z");
+  test("per-role model override replaces the default model", () => {
+    const config = parseConfig(`{
+      "default_provider": "9router",
+      "default_model": "kr/claude-sonnet-4.5",
+      "models": {
+        "planner": { "model": "kr/claude-opus-4.8" },
+        "worker": { "model": "kr/claude-haiku-4.5" }
+      }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-opus-4.8" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-haiku-4.5" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" }); // default
   });
 
-  test("a CLI flag wins over the config value", () => {
-    const cfg: DiabloConfig = {
-      ...config,
-      models: { planner: "opus-x", worker: "haiku-y", verifier: "sonnet-z" },
-    };
-    const models = resolveModels(cfg, { plannerModel: "flag-planner" });
-    expect(models.planner).toBe("flag-planner"); // flag wins
-    expect(models.worker).toBe("haiku-y"); // config kept
+  test("per-role provider override replaces the default provider", () => {
+    const config = parseConfig(`{
+      "default_provider": "9router",
+      "default_model": "kr/claude-sonnet-4.5",
+      "models": {
+        "planner": { "provider": "openrouter", "model": "deepseek/r1" }
+      }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.planner).toEqual({ provider: "openrouter", model: "deepseek/r1" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" }); // default
+  });
+
+  test("a CLI flag wins over the config model (but provider comes from config)", () => {
+    const config = parseConfig(`{
+      "default_provider": "9router",
+      "default_model": "kr/claude-sonnet-4.5",
+      "models": {
+        "planner": { "provider": "openrouter", "model": "deepseek/r1" }
+      }
+    }`);
+    const models = resolveModels(config, { plannerModel: "flag-model" });
+    expect(models.planner).toEqual({ provider: "openrouter", model: "flag-model" }); // flag wins for model
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
   });
 
   test("a CLI flag wins even when config left the default", () => {
+    const config = parseConfig(MINIMAL_JSON);
     const models = resolveModels(config, {
       workerModel: "claude-haiku-4.5",
       verifierModel: "claude-opus-4.8",
     });
-    expect(models.worker).toBe("claude-haiku-4.5");
-    expect(models.verifier).toBe("claude-opus-4.8");
-    expect(models.planner).toBe(defaultModelName("planner-high"));
+    expect(models.worker).toEqual({ provider: "9router", model: "claude-haiku-4.5" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "claude-opus-4.8" });
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+  });
+
+  test("each role can have a completely different provider", () => {
+    const config = parseConfig(`{
+      "default_provider": "9router",
+      "default_model": "kr/claude-sonnet-4.5",
+      "models": {
+        "planner": { "provider": "anthropic", "model": "claude-opus-4-20250514" },
+        "worker": { "provider": "9router", "model": "mimo/mimo-v2.5-pro" },
+        "verifier": { "provider": "openrouter", "model": "deepseek/deepseek-chat-v3-0324" }
+      }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.planner).toEqual({ provider: "anthropic", model: "claude-opus-4-20250514" });
+    expect(models.worker).toEqual({ provider: "9router", model: "mimo/mimo-v2.5-pro" });
+    expect(models.verifier).toEqual({ provider: "openrouter", model: "deepseek/deepseek-chat-v3-0324" });
   });
 });

@@ -83,7 +83,7 @@ describe("PiAgent", () => {
   test("applies per-tier model overrides when constructed with them", async () => {
     const runner = new FakeRunner({ stdout: agentEndLine, stderr: "", exitCode: 0 });
     const agent = new PiAgent("pi", runner, {
-      worker: { model: "claude-haiku-4.5", thinking: "medium" },
+      worker: { provider: "9router", model: "kr/claude-haiku-4.5", thinking: "medium" },
     });
     await agent.run(spec);
 

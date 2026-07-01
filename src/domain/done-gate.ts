@@ -48,14 +48,17 @@ export interface DecideDoneOpts {
 /**
  * Normalizes a criterion to a match key: strips any trailing ` — rationale`
  * the verifier appends (em-dash, en-dash, or `--`), lowercases, collapses
- * whitespace, and drops trailing punctuation. The verifier writes entries like
- * `bug is fixed — test_billing.test.ts passes`; the issue carries the bare
- * `bug is fixed`. Stripping the rationale on both sides lets them match by the
- * criterion text alone instead of by list position.
+ * whitespace, drops trailing punctuation, strips backtick formatting, and
+ * removes parenthetical additions (e.g. examples the verifier appends).
+ * The verifier writes entries like `bug is fixed — test_billing.test.ts passes`;
+ * the issue carries the bare `bug is fixed`. Stripping the rationale on both
+ * sides lets them match by the criterion text alone instead of by list position.
  */
 function key(text: string): string {
   return text
     .split(/\s+(?:—|–|--)\s+/)[0]!
+    .replace(/`/g, "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim()
