@@ -129,15 +129,24 @@ describe("parseArgs", () => {
     });
   });
 
-  test("parses the init command", () => {
-    expect(parseArgs(["init"])).toEqual({ command: "init" });
+  test("parses the init command with defaults", () => {
+    expect(parseArgs(["init"])).toEqual({
+      command: "init",
+      interactive: false,
+      agentDoc: "agents",
+      context: "single",
+      tracker: "markdown",
+      triageLabels: [],
+      bootstrap: false,
+      setupSkills: false,
+    });
   });
 
-  test("init takes no positional args (extra args are an error)", () => {
+  test("init rejects positional args (but accepts flags)", () => {
     const parsed = parseArgs(["init", "extra"]);
     expect(parsed.command).toBe("error");
     if (parsed.command === "error") {
-      expect(parsed.message).toMatch(/init/i);
+      expect(parsed.message).toMatch(/positional/i);
     }
   });
 
@@ -285,5 +294,133 @@ describe("parseArgs", () => {
     if (parsed.command === "error") {
       expect(parsed.message).toMatch(/unknown option/i);
     }
+  });
+
+  // --- init flag parsing ---
+
+  test("init --interactive / -i sets interactive true", () => {
+    expect(parseArgs(["init", "--interactive"])).toMatchObject({ interactive: true });
+    expect(parseArgs(["init", "-i"])).toMatchObject({ interactive: true });
+  });
+
+  test("init --agents is the default (explicit flag is idempotent)", () => {
+    expect(parseArgs(["init", "--agents"])).toMatchObject({ agentDoc: "agents" });
+  });
+
+  test("init --claude sets agentDoc to claude", () => {
+    expect(parseArgs(["init", "--claude"])).toMatchObject({ agentDoc: "claude" });
+  });
+
+  test("init --agents and --claude together is an error", () => {
+    const parsed = parseArgs(["init", "--agents", "--claude"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/cannot combine.*--agents.*--claude/i);
+    }
+  });
+
+  test("init --context single / multiple", () => {
+    expect(parseArgs(["init", "--context", "single"])).toMatchObject({ context: "single" });
+    expect(parseArgs(["init", "--context", "multiple"])).toMatchObject({ context: "multiple" });
+  });
+
+  test("init --context without a value is an error", () => {
+    const parsed = parseArgs(["init", "--context"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/--context requires/i);
+    }
+  });
+
+  test("init --context with invalid value is an error", () => {
+    const parsed = parseArgs(["init", "--context", "bogus"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/invalid.*--context/i);
+    }
+  });
+
+  test("init --markdown sets tracker", () => {
+    expect(parseArgs(["init", "--markdown"])).toMatchObject({ tracker: "markdown" });
+  });
+
+  test("init --triage-labels (bare) uses default labels", () => {
+    expect(parseArgs(["init", "--triage-labels"])).toMatchObject({ triageLabels: [] });
+  });
+
+  test("init --triage-labels with comma-separated values", () => {
+    expect(parseArgs(["init", "--triage-labels", "a,b,c"])).toMatchObject({
+      triageLabels: ["a", "b", "c"],
+    });
+  });
+
+  test("init --triage-labels with values containing spaces (trimmed)", () => {
+    expect(parseArgs(["init", "--triage-labels", "a, b , c"])).toMatchObject({
+      triageLabels: ["a", "b", "c"],
+    });
+  });
+
+  test("init --no-triage-labels sets triageLabels to null", () => {
+    expect(parseArgs(["init", "--no-triage-labels"])).toMatchObject({ triageLabels: null });
+  });
+
+  test("init --triage-labels and --no-triage-labels together is an error", () => {
+    const parsed = parseArgs(["init", "--triage-labels", "--no-triage-labels"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/cannot combine.*triage/i);
+    }
+  });
+
+  test("init --bootstrap sets bootstrap true", () => {
+    expect(parseArgs(["init", "--bootstrap"])).toMatchObject({ bootstrap: true });
+  });
+
+  test("init --package-manager bun sets packageManager and implies bootstrap", () => {
+    expect(parseArgs(["init", "--package-manager", "bun"])).toMatchObject({
+      packageManager: "bun",
+      bootstrap: true,
+    });
+  });
+
+  test("init --package-manager without a value is an error", () => {
+    const parsed = parseArgs(["init", "--package-manager"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/--package-manager requires/i);
+    }
+  });
+
+  test("init --bootstrap and --package-manager together is an error", () => {
+    const parsed = parseArgs(["init", "--bootstrap", "--package-manager", "bun"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/already implies/i);
+    }
+  });
+
+  test("init --setup-skills sets setupSkills true", () => {
+    expect(parseArgs(["init", "--setup-skills"])).toMatchObject({ setupSkills: true });
+  });
+
+  test("init unknown flag is an error", () => {
+    const parsed = parseArgs(["init", "--bogus"]);
+    expect(parsed.command).toBe("error");
+    if (parsed.command === "error") {
+      expect(parsed.message).toMatch(/unknown init option/i);
+    }
+  });
+
+  test("init combines multiple flags freely", () => {
+    expect(parseArgs(["init", "--claude", "--context", "multiple", "--no-triage-labels"])).toEqual({
+      command: "init",
+      interactive: false,
+      agentDoc: "claude",
+      context: "multiple",
+      tracker: "markdown",
+      triageLabels: null,
+      bootstrap: false,
+      setupSkills: false,
+    });
   });
 });

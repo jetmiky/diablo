@@ -16,6 +16,31 @@ export interface ModelFlagArgs {
   plain?: boolean;
 }
 
+/** Flags accepted by `diablo init`. */
+export interface InitFlags {
+  /** --interactive / -i: run the full interactive flow (Pi session + prompts). */
+  interactive: boolean;
+  /** --agents (default) or --claude: which agent guidance doc to scaffold. */
+  agentDoc: "agents" | "claude";
+  /** --context single|multiple: context layout mode. */
+  context: "single" | "multiple";
+  /** --markdown: issue tracker type (future-proofing for other trackers). */
+  tracker: "markdown";
+  /**
+   * Triage label scaffold policy.
+   * - `[]` (empty) → scaffold with the default 5-label vocabulary
+   * - `["a","b"]` → scaffold with these custom labels
+   * - `null` → skip triage scaffold entirely (--no-triage-labels)
+   */
+  triageLabels: string[] | null;
+  /** --bootstrap: run git init + husky/commitlint. */
+  bootstrap: boolean;
+  /** --package-manager bun|npm|pnpm|skip: non-interactive PM choice. */
+  packageManager?: string;
+  /** --setup-skills: run the interactive Pi skill-setup session. */
+  setupSkills: boolean;
+}
+
 export type ParsedArgs =
   | ({ command: "run"; issue?: string } & ModelFlagArgs)
   | ({ command: "plan"; issue?: string } & ModelFlagArgs)
@@ -25,7 +50,7 @@ export type ParsedArgs =
   | { command: "telegram"; sub: "setup" }
   | { command: "version" }
   | { command: "help" }
-  | { command: "init" }
+  | ({ command: "init" } & InitFlags)
   | { command: "error"; message: string };
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -40,10 +65,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
 
   if (first === "init") {
-    if (rest.length > 0) {
-      return { command: "error", message: "init takes no arguments: diablo init" };
+    const parsed = parseInitFlags(rest);
+    if ("error" in parsed) {
+      return { command: "error", message: parsed.error };
     }
-    return { command: "init" };
+    return { command: "init", ...parsed.flags };
   }
 
   if (first === "intake") {
@@ -162,4 +188,130 @@ function parseModelFlags(
   }
 
   return { models };
+}
+
+/** The default init flags — zero-argument `diablo init` uses these. */
+export const INIT_DEFAULTS: InitFlags = {
+  interactive: false,
+  agentDoc: "agents",
+  context: "single",
+  tracker: "markdown",
+  triageLabels: [],
+  bootstrap: false,
+  setupSkills: false,
+};
+
+/**
+ * Parses `diablo init` flags. Returns the resolved InitFlags on success, or a
+ * human-readable error on conflict / missing value / unknown flag.
+ *
+ * Mutual exclusions enforced:
+ * - `--agents` + `--claude` → error
+ * - `--bootstrap` + `--package-manager` → error (PM implies bootstrap)
+ * - `--triage-labels` + `--no-triage-labels` → error
+ */
+function parseInitFlags(flags: string[]): { flags: InitFlags } | { error: string } {
+  const result: InitFlags = { ...INIT_DEFAULTS };
+  const seen = new Set<string>();
+
+  for (let i = 0; i < flags.length; i++) {
+    const flag = flags[i]!;
+
+    if (flag === "--interactive" || flag === "-i") {
+      result.interactive = true;
+      continue;
+    }
+
+    if (flag === "--agents") {
+      if (seen.has("--claude")) return { error: "cannot combine --agents and --claude" };
+      seen.add("--agents");
+      result.agentDoc = "agents";
+      continue;
+    }
+
+    if (flag === "--claude") {
+      if (seen.has("--agents")) return { error: "cannot combine --agents and --claude" };
+      seen.add("--claude");
+      result.agentDoc = "claude";
+      continue;
+    }
+
+    if (flag === "--context") {
+      const value = flags[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return { error: "--context requires a value (single or multiple)" };
+      }
+      if (value !== "single" && value !== "multiple") {
+        return { error: `invalid --context value: ${value} (expected single or multiple)` };
+      }
+      result.context = value;
+      i++; // consume the value
+      continue;
+    }
+
+    if (flag === "--markdown") {
+      result.tracker = "markdown";
+      continue;
+    }
+
+    if (flag === "--triage-labels") {
+      if (seen.has("--no-triage-labels"))
+        return { error: "cannot combine --triage-labels and --no-triage-labels" };
+      seen.add("--triage-labels");
+      const value = flags[i + 1];
+      if (value !== undefined && !value.startsWith("-")) {
+        result.triageLabels = value
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        i++; // consume the value
+      } else {
+        result.triageLabels = []; // default labels
+      }
+      continue;
+    }
+
+    if (flag === "--no-triage-labels") {
+      if (seen.has("--triage-labels"))
+        return { error: "cannot combine --triage-labels and --no-triage-labels" };
+      seen.add("--no-triage-labels");
+      result.triageLabels = null;
+      continue;
+    }
+
+    if (flag === "--bootstrap") {
+      if (seen.has("--package-manager"))
+        return { error: "--package-manager already implies --bootstrap" };
+      seen.add("--bootstrap");
+      result.bootstrap = true;
+      continue;
+    }
+
+    if (flag === "--package-manager") {
+      if (seen.has("--bootstrap"))
+        return { error: "--package-manager already implies --bootstrap" };
+      seen.add("--package-manager");
+      const value = flags[i + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return { error: "--package-manager requires a value (bun, npm, pnpm, or skip)" };
+      }
+      result.packageManager = value;
+      result.bootstrap = true; // implies bootstrap
+      i++; // consume the value
+      continue;
+    }
+
+    if (flag === "--setup-skills") {
+      result.setupSkills = true;
+      continue;
+    }
+
+    // Unknown flag or positional arg
+    if (flag.startsWith("-")) {
+      return { error: `unknown init option: ${flag}` };
+    }
+    return { error: `init does not accept positional arguments: ${flag}` };
+  }
+
+  return { flags: result };
 }
