@@ -4,6 +4,7 @@ import {
   resolveModels,
   defaultConfig,
   type DiabloConfig,
+  type ThinkingLevel,
 } from "../src/domain/config.ts";
 
 /**
@@ -262,5 +263,39 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
     expect(models.planner).toEqual({ provider: "anthropic", model: "claude-opus-4-20250514" });
     expect(models.worker).toEqual({ provider: "9router", model: "mimo/mimo-v2.5-pro" });
     expect(models.verifier).toEqual({ provider: "openrouter", model: "deepseek/deepseek-chat-v3-0324" });
+  });
+});
+
+describe("parseConfig — new defaults format", () => {
+  const DEFAULTS_MINIMAL = '{ "defaults": { "provider": "9router", "model": "kr/claude-sonnet-4.5" } }';
+
+  test("accepts the new defaults format with provider and model", () => {
+    const cfg = parseConfig(DEFAULTS_MINIMAL);
+    expect(cfg.defaultProvider).toBe("9router");
+    expect(cfg.defaultModel).toBe("kr/claude-sonnet-4.5");
+  });
+
+  test("defaults.thinking is parsed and stored", () => {
+    const cfg = parseConfig('{ "defaults": { "provider": "9router", "model": "m", "thinking": "high" } }');
+    expect(cfg.defaultThinking).toBe("high");
+  });
+
+  test("defaults.thinking defaults to medium when omitted", () => {
+    const cfg = parseConfig(DEFAULTS_MINIMAL);
+    expect(cfg.defaultThinking).toBe("medium");
+  });
+
+  test("accepts all valid thinking levels", () => {
+    const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+    for (const level of levels) {
+      const cfg = parseConfig(`{ "defaults": { "provider": "p", "model": "m", "thinking": "${level}" } }`);
+      expect(cfg.defaultThinking).toBe(level);
+    }
+  });
+
+  test("rejects an invalid thinking level in defaults", () => {
+    expect(() => parseConfig('{ "defaults": { "provider": "p", "model": "m", "thinking": "turbo" } }')).toThrow(
+      /thinking/i,
+    );
   });
 });
