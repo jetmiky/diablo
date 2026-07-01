@@ -29,12 +29,12 @@ import {
 import { runDiablo, type RunDiabloConfig, type RunDiabloDeps, type RunDiabloResult } from "../app/run-diablo.ts";
 import { cleanIssue } from "../app/clean-issue.ts";
 import { loadConfig } from "../app/load-config.ts";
-import { initDiablo } from "../app/init-diablo.ts";
+import { initDiablo, initDiabloNonInteractive } from "../app/init-diablo.ts";
 import { intakeDiablo, type GrillContext } from "../app/intake-diablo.ts";
 import { setupTelegram } from "../app/setup-telegram.ts";
 import { intakeSessionId, buildIntakeArgs } from "../domain/intake-spec.ts";
 import { resolveModels, type ResolvedModels, type ConfigLimits, type DiabloConfig } from "../domain/config.ts";
-import { bootstrapCommands, type PackageManager } from "../domain/package-manager.ts";
+import { bootstrapCommands, PACKAGE_MANAGERS, type PackageManager } from "../domain/package-manager.ts";
 import { huskyArtifacts } from "../domain/husky-hooks.ts";
 import { StdinPrompt } from "../adapters/stdin-prompt.ts";
 import { StdoutProgress } from "../adapters/stdout-progress.ts";
@@ -70,7 +70,8 @@ const VERSION = "0.1.0";
 const HELP = `diablo ${VERSION} — a skill-driven Pi conductor
 
 Usage:
-  diablo init            Scaffold diablo.config.json and set up skills
+  diablo init            Scaffold project for diablo (non-interactive defaults)
+  diablo init -i         Scaffold project interactively (Pi session + prompts)
   diablo intake <feature> Gather requirements (grill → PRD → issues), interactive
   diablo plan [issue]    Negotiate a plan with the planner, then freeze it
   diablo run [issue]     Run an issue's stages through the agent pipeline
@@ -79,6 +80,18 @@ Usage:
   diablo telegram setup  Configure per-repo Telegram push credentials
   diablo --version       Print the version
   diablo --help          Show this help
+
+Init options (non-interactive, all optional):
+  --interactive, -i      Run the full interactive flow (Pi session + prompts)
+  --agents               Scaffold AGENTS.md (default)
+  --claude               Scaffold CLAUDE.md instead of AGENTS.md
+  --markdown             Scaffold .scratch/ issue tracker (default)
+  --context <mode>       Context layout: single (default) or multiple
+  --triage-labels [csv]  Scaffold triage labels (default 5, or comma-separated)
+  --no-triage-labels     Skip triage label scaffold
+  --bootstrap            Run git init + husky/commitlint (interactive PM choice)
+  --package-manager <pm> Non-interactive PM: bun, npm, pnpm, or skip
+  --setup-skills         Run the interactive Pi skill-setup session
 
 When 'plan' or 'run' is invoked with no issue, an interactive selector lists the
 discovered issues (requires a terminal; in a non-interactive context, pass the
@@ -245,6 +258,10 @@ function buildOverrides(models: ResolvedModels): ModelOverrides {
   };
 }
 
+function isPackageManager(value: string): value is PackageManager {
+  return (PACKAGE_MANAGERS as readonly string[]).includes(value);
+}
+
 /** The resolved per-run wiring shared by `plan`, `run`, and `refactor`. */
 interface RunContext {
   config: DiabloConfig;
@@ -359,19 +376,55 @@ async function main(argv: string[]): Promise<number> {
       const repoRoot = process.cwd();
       const configPath = `${repoRoot}/${CONFIG_FILENAME}`;
       const gitignorePath = `${repoRoot}/.gitignore`;
+      const config = { configPath, gitignorePath, repoRoot };
       const runner = new NodeProcessRunner();
       const piBinary = resolvePiBinary(process.env);
-      await initDiablo(
-        {
-          fs: new NodeFs(),
-          prompt: new StdinPrompt(),
-          hasCommits: () => hasCommits(runner, repoRoot),
-          setupSkills: () => runSetupSkills(piBinary, runner, repoRoot),
-          gitInit: () => gitInit(runner, repoRoot),
-          installTooling: (pm) => installTooling(runner, repoRoot, pm),
-        },
-        { configPath, gitignorePath },
-      );
+
+      if (parsed.interactive) {
+        // Full interactive flow (existing behaviour)
+        await initDiablo(
+          {
+            fs: new NodeFs(),
+            prompt: new StdinPrompt(),
+            hasCommits: () => hasCommits(runner, repoRoot),
+            setupSkills: () => runSetupSkills(piBinary, runner, repoRoot),
+            gitInit: () => gitInit(runner, repoRoot),
+            installTooling: (pm) => installTooling(runner, repoRoot, pm),
+          },
+          config,
+        );
+      } else {
+        // Non-interactive: scaffold with defaults + flags
+        await initDiabloNonInteractive(
+          {
+            fs: new NodeFs(),
+            hasCommits: () => hasCommits(runner, repoRoot),
+          },
+          config,
+          {
+            agentDoc: parsed.agentDoc,
+            context: parsed.context,
+            triageLabels: parsed.triageLabels,
+          },
+        );
+
+        // Opt-in: run the interactive skill-setup session
+        if (parsed.setupSkills) {
+          await runSetupSkills(piBinary, runner, repoRoot);
+        }
+
+        // Opt-in: bootstrap tooling
+        if (parsed.bootstrap) {
+          await gitInit(runner, repoRoot);
+          if (parsed.packageManager && parsed.packageManager !== "skip") {
+            const pm = parsed.packageManager;
+            if (isPackageManager(pm)) {
+              await installTooling(runner, repoRoot, pm);
+            }
+          }
+        }
+      }
+
       process.stdout.write(`\n✅ diablo initialized in ${repoRoot}\n`);
       return 0;
     }
