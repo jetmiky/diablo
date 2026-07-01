@@ -354,6 +354,7 @@ describe("resolveModels — thinking propagation", () => {
   test("resolved models carry the default thinking when no per-role override", () => {
     const config = parseConfig('{ "defaults": { "provider": "9router", "model": "m", "thinking": "high" } }');
     const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // per-role default for architect is "high", but config overrides it
     expect(models.planner.thinking).toBe("high");
     expect(models.worker.thinking).toBe("high");
     expect(models.verifier.thinking).toBe("high");
@@ -365,16 +366,27 @@ describe("resolveModels — thinking propagation", () => {
       "models": { "worker": { "thinking": "high" } }
     }`);
     const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // architect built-in default
     expect(models.planner.thinking).toBe("medium"); // default
     expect(models.worker.thinking).toBe("high"); // overridden
     expect(models.verifier.thinking).toBe("medium"); // default
   });
 
-  test("legacy config gives all roles medium thinking", () => {
+  test("legacy config gives architect high thinking and others medium", () => {
     const config = parseConfig('{ "default_provider": "p", "default_model": "m" }');
     const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // architect built-in default
     expect(models.planner.thinking).toBe("medium");
     expect(models.worker.thinking).toBe("medium");
     expect(models.verifier.thinking).toBe("medium");
+  });
+
+  test("architect thinking can be overridden via config", () => {
+    const config = parseConfig(`{
+      "defaults": { "provider": "9router", "model": "m", "thinking": "medium" },
+      "models": { "architect": { "thinking": "xhigh" } }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("xhigh");
   });
 });

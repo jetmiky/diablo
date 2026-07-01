@@ -24,13 +24,13 @@ describe("buildPiArgs", () => {
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-sonnet-4.5:medium");
   });
 
-  test("maps planner-high to opus at high thinking", () => {
-    const args = buildPiArgs({ ...baseSpec, tier: "planner-high" });
+  test("maps architect to opus at high thinking", () => {
+    const args = buildPiArgs({ ...baseSpec, tier: "architect" });
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-opus-4.8:high");
   });
 
-  test("maps planner-med to opus at medium thinking", () => {
-    const args = buildPiArgs({ ...baseSpec, tier: "planner-med" });
+  test("maps planner to opus at medium thinking", () => {
+    const args = buildPiArgs({ ...baseSpec, tier: "planner" });
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-opus-4.8:medium");
   });
 
@@ -110,17 +110,17 @@ describe("buildPiArgs model overrides", () => {
 
   test("an override for a different tier leaves this tier's default intact", () => {
     const args = buildPiArgs(baseSpec, {
-      "planner-high": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" },
+      "architect": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" },
     });
     expect(args[args.indexOf("--model") + 1]).toBe("9router/kr/claude-sonnet-4.5:medium");
   });
 
   test("overrides apply per tier across planner and worker", () => {
     const overrides = {
-      "planner-high": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" as const },
+      "architect": { provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "high" as const },
       worker: { provider: "9router", model: "kr/claude-haiku-4.5", thinking: "medium" as const },
     };
-    const planner = buildPiArgs({ ...baseSpec, tier: "planner-high" }, overrides);
+    const planner = buildPiArgs({ ...baseSpec, tier: "architect" }, overrides);
     const worker = buildPiArgs(baseSpec, overrides);
     expect(planner[planner.indexOf("--model") + 1]).toBe("9router/kr/claude-sonnet-4.5:high");
     expect(worker[worker.indexOf("--model") + 1]).toBe("9router/kr/claude-haiku-4.5:medium");

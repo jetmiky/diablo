@@ -1,5 +1,5 @@
 /**
- * Freeze-plan use-case: on explicit approval, dispatches a final planner-high
+ * Freeze-plan use-case: on explicit approval, dispatches a final architect
  * step to rewrite the plan as clean/frozen with a "Decisions & rationale"
  * section distilling the negotiation, then persists issue status as "planned".
  */
@@ -28,7 +28,7 @@ export interface FreezePlanConfig {
 }
 
 /**
- * Freezes the plan after explicit approval. Dispatches a final planner-high
+ * Freezes the plan after explicit approval. Dispatches a final architect
  * step (SAME stable session as the proposal/negotiation) instructing the
  * planner to REWRITE the plan at planPath as a clean, frozen plan PLUS a
  * "Decisions & rationale" section distilling the *why* from the negotiation.
@@ -44,7 +44,7 @@ export async function freezePlan(
     `reasoning from our negotiation. This is the final, approved plan.`;
 
   const spec: RunSpec = {
-    tier: "planner-high",
+    tier: "architect",
     issue: config.issue,
     stage: "plan",
     skills: config.plannerSkills,

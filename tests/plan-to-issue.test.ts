@@ -52,9 +52,9 @@ describe("planToIssue", () => {
     expect(issue.stages[1]!.stage).toBe("stage-2");
   });
 
-  test("each stage runs a design (planner-med), then worker, then verifier step", () => {
+  test("each stage runs a design (planner), then worker, then verifier step", () => {
     const stage = planToIssue(plan, config).stages[0]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
+    expect(stage.steps.map((s) => s.tier)).toEqual(["planner", "worker", "verifier"]);
   });
 
   test("the design step does not commit (advisory note only) and the worker commits", () => {
@@ -272,7 +272,7 @@ describe("planToIssue verification stages", () => {
     // judgment and escalates to the planner (opus) tier; mid-pipeline verifiers
     // stay cheap on the verifier tier.
     const stage = planToIssue(verificationPlan, config).stages[1]!;
-    expect(stage.steps[0]!.tier).toBe("planner-med");
+    expect(stage.steps[0]!.tier).toBe("planner");
   });
 
   test("the final verification step still enforces a verdict (verifies=true)", () => {
@@ -294,7 +294,7 @@ describe("planToIssue verification stages", () => {
 
   test("non-verification stages are unaffected (design, worker, then verifier)", () => {
     const stage = planToIssue(verificationPlan, config).stages[0]!;
-    expect(stage.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
+    expect(stage.steps.map((s) => s.tier)).toEqual(["planner", "worker", "verifier"]);
   });
 
   test("matches verification stages case-insensitively by title", () => {
@@ -303,7 +303,7 @@ describe("planToIssue verification stages", () => {
     };
     const stage = planToIssue(lower, config).stages[0]!;
     expect(stage.steps).toHaveLength(1);
-    expect(stage.steps[0]!.tier).toBe("planner-med");
+    expect(stage.steps[0]!.tier).toBe("planner");
   });
 
   test("the final verification instruction requires a per-criterion CRITERIA checklist", () => {

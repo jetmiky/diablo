@@ -41,6 +41,7 @@ export interface RoleModelOverride {
 
 /** The `models` config field: per-role optional overrides. */
 export interface ConfigModels {
+  architect?: RoleModelOverride;
   planner?: RoleModelOverride;
   worker?: RoleModelOverride;
   verifier?: RoleModelOverride;
@@ -53,8 +54,9 @@ export interface ResolvedRoleModel {
   thinking: ThinkingLevel;
 }
 
-/** All three roles resolved to concrete provider+model pairs. */
+/** All four roles resolved to concrete provider+model+thinking. */
 export interface ResolvedModels {
+  architect: ResolvedRoleModel;
   planner: ResolvedRoleModel;
   worker: ResolvedRoleModel;
   verifier: ResolvedRoleModel;
@@ -262,6 +264,11 @@ export function parseConfig(text: string): DiabloConfig {
  */
 export function resolveModels(config: DiabloConfig, flags: ModelFlags): ResolvedModels {
   return {
+    architect: {
+      provider: config.models.architect?.provider ?? config.defaultProvider,
+      model: config.models.architect?.model ?? config.defaultModel,
+      thinking: config.models.architect?.thinking ?? "high",
+    },
     planner: {
       provider: config.models.planner?.provider ?? config.defaultProvider,
       model: flags.plannerModel ?? config.models.planner?.model ?? config.defaultModel,
@@ -288,7 +295,7 @@ function mergeModels(raw: unknown): ConfigModels {
   const m = raw as Record<string, unknown>;
   const result: ConfigModels = {};
 
-  for (const role of ["planner", "worker", "verifier"] as const) {
+  for (const role of ["architect", "planner", "worker", "verifier"] as const) {
     const val = m[role];
     if (val === undefined) continue;
     if (typeof val === "string") {

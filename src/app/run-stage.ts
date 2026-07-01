@@ -55,7 +55,7 @@ export interface RetryPolicy {
 }
 
 const ACTIVITY: Partial<Record<Step["tier"], ProgressEvent["kind"]>> = {
-  "planner-med": "design-running",
+  "planner": "design-running",
   worker: "worker-running",
   verifier: "verifier-running",
 };

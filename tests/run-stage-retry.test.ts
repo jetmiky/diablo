@@ -163,7 +163,7 @@ describe("runStage retry", () => {
     return {
       issue: "billing-02",
       stage: "stage-9",
-      steps: [step({ tier: "planner-med", verifies: true, commitMessage: undefined })],
+      steps: [step({ tier: "planner", verifies: true, commitMessage: undefined })],
       recoveryWorker: step({ tier: "worker", commitMessage: "fix(billing-02): final verification recovery" }),
       ...over,
     };
@@ -178,8 +178,8 @@ describe("runStage retry", () => {
     const git = new SeqGit();
     const out = await runStage(deps(agent, git), finalVerifyStage(), { limit: 2 });
 
-    // verifier(planner-med) FAIL → recovery worker → re-verify → PASS
-    expect(agent.tiers()).toEqual(["planner-med", "worker", "planner-med"]);
+    // verifier(planner) FAIL → recovery worker → re-verify → PASS
+    expect(agent.tiers()).toEqual(["planner", "worker", "planner"]);
     expect(git.commits).toHaveLength(1); // the recovery fix committed
     expect(out.commit).toBe("1".repeat(40));
   });
@@ -202,7 +202,7 @@ describe("runStage retry", () => {
     await expect(
       runStage(deps(agent, new SeqGit()), finalVerifyStage(), { limit: 3 }),
     ).rejects.toThrow(VerificationFailedError);
-    expect(agent.tiers()).toEqual(["planner-med"]); // no recovery on a plan defect
+    expect(agent.tiers()).toEqual(["planner"]); // no recovery on a plan defect
   });
 
   test("a final verification with NO recoveryWorker halts on FAIL (back-compat)", async () => {
@@ -211,7 +211,7 @@ describe("runStage retry", () => {
     await expect(runStage(deps(agent, new SeqGit()), stage, { limit: 3 })).rejects.toThrow(
       VerificationFailedError,
     );
-    expect(agent.tiers()).toEqual(["planner-med"]); // nothing to re-run
+    expect(agent.tiers()).toEqual(["planner"]); // nothing to re-run
   });
 
   test("recovery retries are bounded by the limit; exhausting it halts", async () => {
@@ -226,11 +226,11 @@ describe("runStage retry", () => {
       runStage(deps(agent, new SeqGit()), finalVerifyStage(), { limit: 2 }),
     ).rejects.toThrow(VerificationFailedError);
     expect(agent.tiers()).toEqual([
-      "planner-med",
+      "planner",
       "worker",
-      "planner-med",
+      "planner",
       "worker",
-      "planner-med",
+      "planner",
     ]);
   });
 });

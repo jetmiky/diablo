@@ -234,15 +234,14 @@ function newRunId(): string {
 /**
  * Builds per-tier model overrides from the RESOLVED models (built-in <-
  * config <- CLI flag, computed by resolveModels). Each role carries its own
- * provider and model; the thinking level is set per-tier (planner-high ->
- * high, planner-med -> medium, worker/verifier -> medium).
+ * provider, model, and thinking level from config resolution.
  */
 function buildOverrides(models: ResolvedModels): ModelOverrides {
   return {
-    "planner-high": { provider: models.planner.provider, model: models.planner.model, thinking: "high" },
-    "planner-med": { provider: models.planner.provider, model: models.planner.model, thinking: "medium" },
-    worker: { provider: models.worker.provider, model: models.worker.model, thinking: "medium" },
-    verifier: { provider: models.verifier.provider, model: models.verifier.model, thinking: "medium" },
+    architect: { provider: models.architect.provider, model: models.architect.model, thinking: models.architect.thinking },
+    planner: { provider: models.planner.provider, model: models.planner.model, thinking: models.planner.thinking },
+    worker: { provider: models.worker.provider, model: models.worker.model, thinking: models.worker.thinking },
+    verifier: { provider: models.verifier.provider, model: models.verifier.model, thinking: models.verifier.thinking },
   };
 }
 

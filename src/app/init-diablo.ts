@@ -93,8 +93,11 @@ async function scaffoldConfig(fs: FsPort, configPath: string): Promise<void> {
   if (await fs.exists(configPath)) return;
   const d = defaultConfig();
   const scaffold = {
-    default_provider: d.defaultProvider,
-    default_model: d.defaultModel,
+    defaults: {
+      provider: d.defaultProvider,
+      model: d.defaultModel,
+      thinking: d.defaultThinking,
+    },
     models: d.models,
     integration: d.integration,
     gate: d.gate,

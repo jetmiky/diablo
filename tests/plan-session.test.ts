@@ -51,13 +51,13 @@ const config = {
 };
 
 describe("proposePlan", () => {
-  test("dispatches one planner-high step", async () => {
+  test("dispatches one architect step", async () => {
     const agent = new FakeAgent("approach summary");
     const fs = new FakeFs();
     await proposePlan({ agent, fs }, config);
 
     expect(agent.calls).toHaveLength(1);
-    expect(agent.calls[0]!.tier).toBe("planner-high");
+    expect(agent.calls[0]!.tier).toBe("architect");
   });
 
   test("injects planner skills as @file", async () => {
@@ -128,13 +128,13 @@ describe("proposePlan", () => {
 });
 
 describe("negotiateTurn", () => {
-  test("dispatches one planner-high step", async () => {
+  test("dispatches one architect step", async () => {
     const agent = new FakeAgent("revised thinking");
     const fs = new FakeFs();
     await negotiateTurn({ agent, fs }, config, "what about edge case X?");
 
     expect(agent.calls).toHaveLength(1);
-    expect(agent.calls[0]!.tier).toBe("planner-high");
+    expect(agent.calls[0]!.tier).toBe("architect");
   });
 
   test("embeds the user message in the instruction", async () => {

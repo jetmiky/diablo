@@ -48,13 +48,13 @@ const config = {
 };
 
 describe("freezePlan", () => {
-  test("dispatches one planner-high step", async () => {
+  test("dispatches one architect step", async () => {
     const agent = new FakeAgent();
     const fs = new FakeFs();
     await freezePlan({ agent, fs }, config);
 
     expect(agent.calls).toHaveLength(1);
-    expect(agent.calls[0]!.tier).toBe("planner-high");
+    expect(agent.calls[0]!.tier).toBe("architect");
   });
 
   test("instruction tells planner to REWRITE planPath as frozen", async () => {

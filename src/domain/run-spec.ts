@@ -13,7 +13,9 @@
  *    stay isolated and the verifier never inherits a worker's reasoning.
  */
 
-export type Tier = "planner-high" | "planner-med" | "worker" | "verifier";
+import type { ThinkingLevel } from "./config.ts";
+
+export type Tier = "architect" | "planner" | "worker" | "verifier";
 
 export interface RunSpec {
   tier: Tier;
@@ -38,7 +40,7 @@ export interface ModelSpec {
   provider: string;
   /** The model identifier including sub-path (e.g. "kr/claude-opus-4.8" or "mimo/mimo-v2.5-pro"). */
   model: string;
-  thinking: "high" | "medium";
+  thinking: ThinkingLevel;
 }
 
 /**
@@ -51,16 +53,16 @@ export type ModelOverrides = Partial<Record<Tier, ModelSpec>>;
 const DEFAULT_PROVIDER = "9router";
 
 const TIER_MODELS: Record<Tier, ModelSpec> = {
-  "planner-high": { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "high" },
-  "planner-med": { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "medium" },
+  architect: { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "high" },
+  planner: { provider: DEFAULT_PROVIDER, model: "kr/claude-opus-4.8", thinking: "medium" },
   worker: { provider: DEFAULT_PROVIDER, model: "kr/claude-sonnet-4.5", thinking: "medium" },
   verifier: { provider: DEFAULT_PROVIDER, model: "kr/claude-sonnet-4.5", thinking: "medium" },
 };
 
 /** The role segment of the deterministic session id. */
 const TIER_ROLES: Record<Tier, string> = {
-  "planner-high": "planner",
-  "planner-med": "planner",
+  architect: "architect",
+  planner: "planner",
   worker: "worker",
   verifier: "verifier",
 };
