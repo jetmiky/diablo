@@ -1,6 +1,6 @@
-# Tutorial: drive diablo on a toy project
+# Tutorial: build a currency converter with Diablo
 
-Build a small TypeScript project end to end — two features, both run modes:
+Build a small TypeScript currency converter end to end — two features, both run modes:
 
 | Feature | Run mode | Shows |
 | --- | --- | --- |
@@ -42,27 +42,33 @@ diablo --version    # → 0.1.0
 ## Step 1 — Init the project
 
 ```bash
-mkdir -p ~/playground/currency-toy && cd ~/playground/currency-toy
-diablo init
+mkdir -p ~/playground/currency-converter && cd ~/playground/currency-converter
+diablo init --package-manager bun --setup-skills
 ```
 
-Run everything below from inside `currency-toy`. `init` scaffolds
-`diablo.config.json`, runs the interactive skill-setup session, then asks to
-bootstrap tooling — answer **y**, choose **bun** (wires `git init` + husky +
-commitlint). Pick **skip** for non-Node projects.
+Run everything below from inside `currency-converter`. This scaffolds Diablo's
+files, runs the interactive Matt Pocock skills setup, and bootstraps git +
+husky/commitlint with Bun. Pick `--package-manager skip` for non-Node projects.
 
 The config it writes:
 
-```jsonc
+```json
 {
-  "models": { "planner": "claude-opus-4.8", "worker": "claude-sonnet-4.5", "verifier": "claude-sonnet-4.5" },
+  "defaults": {
+    "provider": "9router",
+    "model": "kr/claude-sonnet-4.5",
+    "thinking": "medium"
+  },
+  "models": {},
   "integration": { "targetBranch": "main", "branchPrefix": "diablo/", "autoMerge": false },
   "gate": "none",
-  "retry": { "limit": 2 }
+  "retry": { "limit": 2 },
+  "limits": { "stepTimeoutMs": 1200000, "runBudgetMs": 14400000, "maxSteps": 200 },
+  "verify": { "commands": [] }
 }
 ```
 
-Field meanings: [README → Configure](../../README.md#configure).
+Field meanings: [docs/config.md](../config.md).
 
 ---
 
@@ -188,7 +194,7 @@ target branch; pass `--force` to discard unmerged work anyway, or `--keep-branch
 to remove only the worktree. To wipe the whole sandbox at once:
 
 ```bash
-rm -rf ~/playground/currency-toy
+rm -rf ~/playground/currency-converter
 ```
 
 ---
