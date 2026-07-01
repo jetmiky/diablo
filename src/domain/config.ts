@@ -36,6 +36,7 @@ const VALID_THINKING_LEVELS: readonly ThinkingLevel[] = [
 export interface RoleModelOverride {
   provider?: string;
   model?: string;
+  thinking?: ThinkingLevel;
 }
 
 /** The `models` config field: per-role optional overrides. */
@@ -49,6 +50,7 @@ export interface ConfigModels {
 export interface ResolvedRoleModel {
   provider: string;
   model: string;
+  thinking: ThinkingLevel;
 }
 
 /** All three roles resolved to concrete provider+model pairs. */
@@ -263,14 +265,17 @@ export function resolveModels(config: DiabloConfig, flags: ModelFlags): Resolved
     planner: {
       provider: config.models.planner?.provider ?? config.defaultProvider,
       model: flags.plannerModel ?? config.models.planner?.model ?? config.defaultModel,
+      thinking: config.models.planner?.thinking ?? config.defaultThinking,
     },
     worker: {
       provider: config.models.worker?.provider ?? config.defaultProvider,
       model: flags.workerModel ?? config.models.worker?.model ?? config.defaultModel,
+      thinking: config.models.worker?.thinking ?? config.defaultThinking,
     },
     verifier: {
       provider: config.models.verifier?.provider ?? config.defaultProvider,
       model: flags.verifierModel ?? config.models.verifier?.model ?? config.defaultModel,
+      thinking: config.models.verifier?.thinking ?? config.defaultThinking,
     },
   };
 }
@@ -303,6 +308,10 @@ function mergeModels(raw: unknown): ConfigModels {
           throw new Error(`Invalid diablo config: 'models.${role}.model' must be a string.`);
         }
         override.model = obj.model;
+      }
+      if (obj.thinking !== undefined) {
+        const t = parseThinking(obj.thinking, `models.${role}.thinking`, "medium" as ThinkingLevel);
+        override.thinking = t;
       }
       result[role] = override;
     } else {
