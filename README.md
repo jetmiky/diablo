@@ -109,12 +109,33 @@ tier.
 
 ## Configure
 
-`diablo init` scaffolds a minimal `diablo.config.json`, runs the skill setup, and
-(opt-in) offers to bootstrap tooling. When you opt in, it asks which package
-manager to use — **bun**, **npm**, or **pnpm** — and runs `git init` (if needed)
-plus installs husky/commitlint with that manager. Choosing **skip** runs `git
-init` only and installs no Node tooling — the escape hatch for non-Node projects
-(Go, Rust, Python), since husky/commitlint require Node regardless of manager.
+`diablo init` scaffolds a project for diablo with sensible defaults (non-interactive, AFK-friendly). It creates:
+
+- `diablo.config.json` — config scaffold (idempotent)
+- `.gitignore` — merges diablo managed block
+- `AGENTS.md` — agent guidance doc
+- `CONTEXT.md` — single-context domain doc
+- `.scratch/` — local issue tracker directory
+- `docs/agents/` — triage labels, issue tracker, and domain conventions
+
+### Interactive mode
+
+`diablo init -i` (or `--interactive`) runs the full interactive flow: a Pi skill-setup session, bootstrap confirmation, and package manager choice.
+
+### Customization flags
+
+```bash
+diablo init                                  # all defaults
+diablo init --claude                         # CLAUDE.md instead of AGENTS.md
+diablo init --context multiple               # per-scope context layout
+diablo init --triage-labels "ready,done,wip" # custom triage labels
+diablo init --no-triage-labels               # skip triage scaffold
+diablo init --package-manager bun            # bootstrap with bun
+diablo init --setup-skills                   # run Pi skill-setup after scaffold
+diablo init -i                               # full interactive flow
+```
+
+When you opt in to bootstrap (`--bootstrap` or `--package-manager`), diablo runs `git init` (if needed) plus installs husky/commitlint with the chosen manager. Choosing **skip** runs `git init` only and installs no Node tooling — the escape hatch for non-Node projects (Go, Rust, Python), since husky/commitlint require Node regardless of manager.
 Config is optional — diablo runs with built-in defaults when no file is present.
 
 ```jsonc
