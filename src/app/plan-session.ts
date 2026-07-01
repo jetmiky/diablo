@@ -29,7 +29,7 @@ export interface PlanSessionConfig {
 }
 
 /**
- * Proposes the initial plan. Dispatches a planner-high step instructing the
+ * Proposes the initial plan. Dispatches a architect step instructing the
  * planner to (a) read the ticket(s), (b) write a PROPOSED staged plan to
  * planPath following the master-plan skill, and (c) in its REPLY summarize
  * the approach, what it deliberately is NOT doing, and self-surfaced risks,
@@ -48,7 +48,7 @@ export async function proposePlan(
     `(c) self-surfaced risks, assumptions, or open questions.\n\n${PLANNER_GUIDANCE}`;
 
   const spec: RunSpec = {
-    tier: "planner-high",
+    tier: "architect",
     issue: config.issue,
     stage: "plan",
     skills: config.plannerSkills,
@@ -85,7 +85,7 @@ export async function negotiateTurn(
     `agree reflexively.`;
 
   const spec: RunSpec = {
-    tier: "planner-high",
+    tier: "architect",
     issue: config.issue,
     stage: "plan",
     skills: config.plannerSkills,

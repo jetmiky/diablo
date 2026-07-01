@@ -22,17 +22,26 @@
  */
 import type { GateMode } from "../ports/gate.ts";
 
+/** Valid Pi thinking levels (matches `pi --thinking` flag). */
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+const VALID_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  "off", "minimal", "low", "medium", "high", "xhigh",
+];
+
 /**
- * Per-role model override. Both fields are optional — omitted fields fall back
- * to the top-level `default_provider` / `default_model`.
+ * Per-role model override. All fields are optional — omitted fields fall back
+ * to the top-level defaults (provider, model, thinking).
  */
 export interface RoleModelOverride {
   provider?: string;
   model?: string;
+  thinking?: ThinkingLevel;
 }
 
 /** The `models` config field: per-role optional overrides. */
 export interface ConfigModels {
+  architect?: RoleModelOverride;
   planner?: RoleModelOverride;
   worker?: RoleModelOverride;
   verifier?: RoleModelOverride;
@@ -42,10 +51,12 @@ export interface ConfigModels {
 export interface ResolvedRoleModel {
   provider: string;
   model: string;
+  thinking: ThinkingLevel;
 }
 
-/** All three roles resolved to concrete provider+model pairs. */
+/** All four roles resolved to concrete provider+model+thinking. */
 export interface ResolvedModels {
+  architect: ResolvedRoleModel;
   planner: ResolvedRoleModel;
   worker: ResolvedRoleModel;
   verifier: ResolvedRoleModel;
@@ -92,6 +103,8 @@ export interface DiabloConfig {
   defaultProvider: string;
   /** The default model identifier (e.g. "kr/claude-sonnet-4.5", "mimo/mimo-v2.5-pro"). REQUIRED. */
   defaultModel: string;
+  /** The default thinking level (e.g. "medium"). Applied to all roles unless overridden. */
+  defaultThinking: ThinkingLevel;
   models: ConfigModels;
   integration: ConfigIntegration;
   gate: GateMode;
@@ -120,6 +133,7 @@ export function defaultConfig(): DiabloConfig {
   return {
     defaultProvider: "9router",
     defaultModel: "kr/claude-sonnet-4.5",
+    defaultThinking: "medium",
     models: {},
     integration: {
       targetBranch: "main",
@@ -162,18 +176,61 @@ export function parseConfig(text: string): DiabloConfig {
   const obj = raw as Record<string, unknown>;
   const base = defaultConfig();
 
-  // Required fields — throw if missing or wrong type
-  const defaultProvider = str(obj.default_provider);
-  if (defaultProvider === undefined) {
+  // Detect new ("defaults") vs legacy ("default_provider") config format.
+  // If both are present, the config is ambiguous — reject it.
+  const hasDefaults = obj.defaults !== undefined;
+  const hasLegacy = obj.default_provider !== undefined;
+
+  if (hasDefaults && hasLegacy) {
     throw new Error(
-      "Invalid diablo config: 'default_provider' is required (e.g. \"9router\").",
+      "Invalid diablo config: 'defaults' and 'default_provider' are mutually exclusive. Use one format, not both.",
     );
   }
-  const defaultModel = str(obj.default_model);
-  if (defaultModel === undefined) {
-    throw new Error(
-      "Invalid diablo config: 'default_model' is required (e.g. \"kr/claude-sonnet-4.5\").",
-    );
+
+  let defaultProvider: string;
+  let defaultModel: string;
+  let defaultThinking: ThinkingLevel;
+
+  if (hasDefaults) {
+    // New format: { "defaults": { "provider": "...", "model": "...", "thinking": "..." } }
+    const defaults = obj.defaults;
+    if (typeof defaults !== "object" || defaults === null || Array.isArray(defaults)) {
+      throw new Error("Invalid diablo config: 'defaults' must be an object.");
+    }
+    const d = defaults as Record<string, unknown>;
+
+    const p = str(d.provider);
+    if (p === undefined) {
+      throw new Error('Invalid diablo config: \'defaults.provider\' is required (e.g. "9router").');
+    }
+    defaultProvider = p;
+
+    const m = str(d.model);
+    if (m === undefined) {
+      throw new Error('Invalid diablo config: \'defaults.model\' is required (e.g. "kr/claude-sonnet-4.5").');
+    }
+    defaultModel = m;
+
+    defaultThinking = parseThinking(d.thinking, "defaults.thinking", base.defaultThinking);
+  } else {
+    // Legacy format: { "default_provider": "...", "default_model": "..." }
+    const p = str(obj.default_provider);
+    if (p === undefined) {
+      throw new Error(
+        "Invalid diablo config: 'default_provider' is required (e.g. \\\"9router\\\").",
+      );
+    }
+    defaultProvider = p;
+
+    const m = str(obj.default_model);
+    if (m === undefined) {
+      throw new Error(
+        "Invalid diablo config: 'default_model' is required (e.g. \\\"kr/claude-sonnet-4.5\\\").",
+      );
+    }
+    defaultModel = m;
+
+    defaultThinking = base.defaultThinking; // legacy format has no thinking → use default
   }
 
   const models = mergeModels(obj.models);
@@ -186,6 +243,7 @@ export function parseConfig(text: string): DiabloConfig {
   const config: DiabloConfig = {
     defaultProvider,
     defaultModel,
+    defaultThinking,
     models,
     integration,
     gate,
@@ -206,17 +264,25 @@ export function parseConfig(text: string): DiabloConfig {
  */
 export function resolveModels(config: DiabloConfig, flags: ModelFlags): ResolvedModels {
   return {
+    architect: {
+      provider: config.models.architect?.provider ?? config.defaultProvider,
+      model: config.models.architect?.model ?? config.defaultModel,
+      thinking: config.models.architect?.thinking ?? "high",
+    },
     planner: {
       provider: config.models.planner?.provider ?? config.defaultProvider,
       model: flags.plannerModel ?? config.models.planner?.model ?? config.defaultModel,
+      thinking: config.models.planner?.thinking ?? config.defaultThinking,
     },
     worker: {
       provider: config.models.worker?.provider ?? config.defaultProvider,
       model: flags.workerModel ?? config.models.worker?.model ?? config.defaultModel,
+      thinking: config.models.worker?.thinking ?? config.defaultThinking,
     },
     verifier: {
       provider: config.models.verifier?.provider ?? config.defaultProvider,
       model: flags.verifierModel ?? config.models.verifier?.model ?? config.defaultModel,
+      thinking: config.models.verifier?.thinking ?? config.defaultThinking,
     },
   };
 }
@@ -229,7 +295,7 @@ function mergeModels(raw: unknown): ConfigModels {
   const m = raw as Record<string, unknown>;
   const result: ConfigModels = {};
 
-  for (const role of ["planner", "worker", "verifier"] as const) {
+  for (const role of ["architect", "planner", "worker", "verifier"] as const) {
     const val = m[role];
     if (val === undefined) continue;
     if (typeof val === "string") {
@@ -249,6 +315,10 @@ function mergeModels(raw: unknown): ConfigModels {
           throw new Error(`Invalid diablo config: 'models.${role}.model' must be a string.`);
         }
         override.model = obj.model;
+      }
+      if (obj.thinking !== undefined) {
+        const t = parseThinking(obj.thinking, `models.${role}.thinking`, "medium" as ThinkingLevel);
+        override.thinking = t;
       }
       result[role] = override;
     } else {
@@ -333,6 +403,17 @@ function parseGate(raw: unknown, fallback: GateMode): GateMode {
     );
   }
   return raw as GateMode;
+}
+
+/** Validates a thinking level value; absent returns the fallback. */
+function parseThinking(raw: unknown, field: string, fallback: ThinkingLevel): ThinkingLevel {
+  if (raw === undefined) return fallback;
+  if (typeof raw !== "string" || !VALID_THINKING_LEVELS.includes(raw as ThinkingLevel)) {
+    throw new Error(
+      `Invalid diablo config: '${field}' must be one of ${VALID_THINKING_LEVELS.join(", ")} (got ${JSON.stringify(raw)}).`,
+    );
+  }
+  return raw as ThinkingLevel;
 }
 
 function str(value: unknown): string | undefined {

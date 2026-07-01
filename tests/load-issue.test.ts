@@ -89,10 +89,10 @@ describe("loadIssue", () => {
     const issue = await loadIssue(deps(agent, fs), config);
 
     expect(agent.calls).toHaveLength(1);
-    expect(agent.calls[0]!.tier).toBe("planner-high");
+    expect(agent.calls[0]!.tier).toBe("architect");
     expect(issue.issue).toBe("billing-02");
     expect(issue.stages).toHaveLength(1);
-    expect(issue.stages[0]!.steps.map((s) => s.tier)).toEqual(["planner-med", "worker", "verifier"]);
+    expect(issue.stages[0]!.steps.map((s) => s.tier)).toEqual(["planner", "worker", "verifier"]);
   });
 
   test("fresh: the planner step injects the master-plan skill and the ticket(s)", async () => {

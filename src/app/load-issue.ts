@@ -3,7 +3,7 @@
  *
  *  - If the frozen plan already exists, it is reused (honoring the master-plan
  *    skill's "frozen, never edited" rule) — no planner run.
- *  - Otherwise a planner-high step runs with the master-plan skill and the
+ *  - Otherwise a architect step runs with the master-plan skill and the
  *    ticket(s) injected, which writes the frozen plan file; that file is then
  *    parsed and mapped into the issue pipeline.
  *
@@ -34,7 +34,7 @@ export interface LoadIssueConfig {
     verifier: string[];
   };
   /**
-   * The instruction handed to the planner-high step. Defaults to the master-plan
+   * The instruction handed to the architect step. Defaults to the master-plan
    * flow; `diablo refactor` swaps it for an improve-codebase-architecture flow.
    * The planner SKILL itself is set via skills.planner — this is the prose that
    * tells the planner what to produce and where to write it.
@@ -125,7 +125,7 @@ async function generatePlan(
   const instruction = `${withReask}\n\n${PLANNER_GUIDANCE}`;
 
   const spec: RunSpec = {
-    tier: "planner-high",
+    tier: "architect",
     issue: config.issue,
     stage: "plan",
     skills: config.skills.planner,

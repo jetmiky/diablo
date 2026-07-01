@@ -4,6 +4,7 @@ import {
   resolveModels,
   defaultConfig,
   type DiabloConfig,
+  type ThinkingLevel,
 } from "../src/domain/config.ts";
 
 /**
@@ -191,9 +192,9 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
   test("with no per-role overrides and no flags, uses defaults", () => {
     const config = parseConfig(MINIMAL_JSON);
     const models = resolveModels(config, {});
-    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
-    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
-    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" });
   });
 
   test("per-role model override replaces the default model", () => {
@@ -206,9 +207,9 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
       }
     }`);
     const models = resolveModels(config, {});
-    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-opus-4.8" });
-    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-haiku-4.5" });
-    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" }); // default
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-opus-4.8", thinking: "medium" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-haiku-4.5", thinking: "medium" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" }); // default
   });
 
   test("per-role provider override replaces the default provider", () => {
@@ -220,8 +221,8 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
       }
     }`);
     const models = resolveModels(config, {});
-    expect(models.planner).toEqual({ provider: "openrouter", model: "deepseek/r1" });
-    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" }); // default
+    expect(models.planner).toEqual({ provider: "openrouter", model: "deepseek/r1", thinking: "medium" });
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" }); // default
   });
 
   test("a CLI flag wins over the config model (but provider comes from config)", () => {
@@ -233,8 +234,8 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
       }
     }`);
     const models = resolveModels(config, { plannerModel: "flag-model" });
-    expect(models.planner).toEqual({ provider: "openrouter", model: "flag-model" }); // flag wins for model
-    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+    expect(models.planner).toEqual({ provider: "openrouter", model: "flag-model", thinking: "medium" }); // flag wins for model
+    expect(models.worker).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" });
   });
 
   test("a CLI flag wins even when config left the default", () => {
@@ -243,9 +244,9 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
       workerModel: "claude-haiku-4.5",
       verifierModel: "claude-opus-4.8",
     });
-    expect(models.worker).toEqual({ provider: "9router", model: "claude-haiku-4.5" });
-    expect(models.verifier).toEqual({ provider: "9router", model: "claude-opus-4.8" });
-    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5" });
+    expect(models.worker).toEqual({ provider: "9router", model: "claude-haiku-4.5", thinking: "medium" });
+    expect(models.verifier).toEqual({ provider: "9router", model: "claude-opus-4.8", thinking: "medium" });
+    expect(models.planner).toEqual({ provider: "9router", model: "kr/claude-sonnet-4.5", thinking: "medium" });
   });
 
   test("each role can have a completely different provider", () => {
@@ -259,8 +260,133 @@ describe("resolveModels — built-in <- config <- CLI flag precedence", () => {
       }
     }`);
     const models = resolveModels(config, {});
-    expect(models.planner).toEqual({ provider: "anthropic", model: "claude-opus-4-20250514" });
-    expect(models.worker).toEqual({ provider: "9router", model: "mimo/mimo-v2.5-pro" });
-    expect(models.verifier).toEqual({ provider: "openrouter", model: "deepseek/deepseek-chat-v3-0324" });
+    expect(models.planner).toEqual({ provider: "anthropic", model: "claude-opus-4-20250514", thinking: "medium" });
+    expect(models.worker).toEqual({ provider: "9router", model: "mimo/mimo-v2.5-pro", thinking: "medium" });
+    expect(models.verifier).toEqual({ provider: "openrouter", model: "deepseek/deepseek-chat-v3-0324", thinking: "medium" });
+  });
+});
+
+describe("parseConfig — new defaults format", () => {
+  const DEFAULTS_MINIMAL = '{ "defaults": { "provider": "9router", "model": "kr/claude-sonnet-4.5" } }';
+
+  test("accepts the new defaults format with provider and model", () => {
+    const cfg = parseConfig(DEFAULTS_MINIMAL);
+    expect(cfg.defaultProvider).toBe("9router");
+    expect(cfg.defaultModel).toBe("kr/claude-sonnet-4.5");
+  });
+
+  test("defaults.thinking is parsed and stored", () => {
+    const cfg = parseConfig('{ "defaults": { "provider": "9router", "model": "m", "thinking": "high" } }');
+    expect(cfg.defaultThinking).toBe("high");
+  });
+
+  test("defaults.thinking defaults to medium when omitted", () => {
+    const cfg = parseConfig(DEFAULTS_MINIMAL);
+    expect(cfg.defaultThinking).toBe("medium");
+  });
+
+  test("accepts all valid thinking levels", () => {
+    const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+    for (const level of levels) {
+      const cfg = parseConfig(`{ "defaults": { "provider": "p", "model": "m", "thinking": "${level}" } }`);
+      expect(cfg.defaultThinking).toBe(level);
+    }
+  });
+
+  test("rejects an invalid thinking level in defaults", () => {
+    expect(() => parseConfig('{ "defaults": { "provider": "p", "model": "m", "thinking": "turbo" } }')).toThrow(
+      /thinking/i,
+    );
+  });
+
+  test("legacy format still works (backward compat)", () => {
+    const cfg = parseConfig('{ "default_provider": "9router", "default_model": "kr/claude-sonnet-4.5" }');
+    expect(cfg.defaultProvider).toBe("9router");
+    expect(cfg.defaultModel).toBe("kr/claude-sonnet-4.5");
+    expect(cfg.defaultThinking).toBe("medium"); // legacy gets the default
+  });
+
+  test("rejects when both defaults and default_provider are present", () => {
+    expect(() =>
+      parseConfig(
+        '{ "defaults": { "provider": "p", "model": "m" }, "default_provider": "p", "default_model": "m" }',
+      ),
+    ).toThrow(/mutually exclusive/i);
+  });
+});
+
+describe("parseConfig — per-role thinking override", () => {
+  test("accepts thinking in a role override", () => {
+    const cfg = parseConfig(`{
+      "defaults": { "provider": "9router", "model": "kr/claude-sonnet-4.5" },
+      "models": { "worker": { "thinking": "high" } }
+    }`);
+    expect(cfg.models.worker).toEqual({ thinking: "high" });
+  });
+
+  test("accepts thinking alongside provider and model in a role override", () => {
+    const cfg = parseConfig(`{
+      "defaults": { "provider": "9router", "model": "m" },
+      "models": { "planner": { "provider": "openrouter", "model": "deepseek/r1", "thinking": "xhigh" } }
+    }`);
+    expect(cfg.models.planner).toEqual({ provider: "openrouter", model: "deepseek/r1", thinking: "xhigh" });
+  });
+
+  test("rejects an invalid thinking level in a role override", () => {
+    expect(() =>
+      parseConfig(`{
+        "defaults": { "provider": "p", "model": "m" },
+        "models": { "worker": { "thinking": "extreme" } }
+      }`),
+    ).toThrow(/models\.worker\.thinking/i);
+  });
+
+  test("string shorthand (backward compat) does not set thinking", () => {
+    const cfg = parseConfig(`{
+      "defaults": { "provider": "p", "model": "m" },
+      "models": { "worker": "haiku" }
+    }`);
+    expect(cfg.models.worker).toEqual({ model: "haiku" });
+  });
+});
+
+describe("resolveModels — thinking propagation", () => {
+  test("resolved models carry the default thinking when no per-role override", () => {
+    const config = parseConfig('{ "defaults": { "provider": "9router", "model": "m", "thinking": "high" } }');
+    const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // per-role default for architect is "high", but config overrides it
+    expect(models.planner.thinking).toBe("high");
+    expect(models.worker.thinking).toBe("high");
+    expect(models.verifier.thinking).toBe("high");
+  });
+
+  test("per-role thinking overrides the default", () => {
+    const config = parseConfig(`{
+      "defaults": { "provider": "9router", "model": "m", "thinking": "medium" },
+      "models": { "worker": { "thinking": "high" } }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // architect built-in default
+    expect(models.planner.thinking).toBe("medium"); // default
+    expect(models.worker.thinking).toBe("high"); // overridden
+    expect(models.verifier.thinking).toBe("medium"); // default
+  });
+
+  test("legacy config gives architect high thinking and others medium", () => {
+    const config = parseConfig('{ "default_provider": "p", "default_model": "m" }');
+    const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("high"); // architect built-in default
+    expect(models.planner.thinking).toBe("medium");
+    expect(models.worker.thinking).toBe("medium");
+    expect(models.verifier.thinking).toBe("medium");
+  });
+
+  test("architect thinking can be overridden via config", () => {
+    const config = parseConfig(`{
+      "defaults": { "provider": "9router", "model": "m", "thinking": "medium" },
+      "models": { "architect": { "thinking": "xhigh" } }
+    }`);
+    const models = resolveModels(config, {});
+    expect(models.architect.thinking).toBe("xhigh");
   });
 });

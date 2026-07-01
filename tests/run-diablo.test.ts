@@ -50,7 +50,7 @@ class FakeAgent implements AgentPort {
   constructor(private onPlan?: () => void) {}
   run(spec: { tier: string }): Promise<PiResult> {
     this.tiers.push(spec.tier);
-    if (spec.tier === "planner-high") this.onPlan?.();
+    if (spec.tier === "architect") this.onPlan?.();
     const text = spec.tier === "verifier" ? "VERDICT: PASS" : "ok";
     return Promise.resolve({ text, stopReason: "stop", usage: { totalTokens: 1, cost: 0 } });
   }
@@ -85,8 +85,8 @@ describe("runDiablo", () => {
     const result = await runDiablo(deps(agent, git, fs), config);
 
     expect(git.worktreesAdded).toEqual(["billing-02"]);
-    expect(agent.tiers[0]).toBe("planner-high");
-    expect(agent.tiers.slice(1)).toEqual(["planner-med", "worker", "verifier"]); // the stage ran
+    expect(agent.tiers[0]).toBe("architect");
+    expect(agent.tiers.slice(1)).toEqual(["planner", "worker", "verifier"]); // the stage ran
     expect(result.commit).toBe("c".repeat(40));
   });
 
@@ -105,7 +105,7 @@ describe("runDiablo", () => {
     const agent = new FakeAgent();
     await runDiablo(deps(agent, new FakeGit(), fs), config);
 
-    expect(agent.tiers).toEqual(["planner-med", "worker", "verifier"]); // planner skipped
+    expect(agent.tiers).toEqual(["planner", "worker", "verifier"]); // planner skipped
   });
 
   test("writes a self-ignoring .plans/.gitignore so machine artifacts never commit", async () => {

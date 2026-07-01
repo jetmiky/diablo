@@ -67,7 +67,7 @@ describe("runStage", () => {
       issue: "billing-02",
       stage: "stage-1",
       steps: [
-        step({ tier: "planner-med", commitMessage: "docs: stage-1 plan" }),
+        step({ tier: "planner", commitMessage: "docs: stage-1 plan" }),
         step({ tier: "worker", commitMessage: "feat: stage-1 impl" }),
         step({ tier: "verifier" }), // no commit
       ],
@@ -75,7 +75,7 @@ describe("runStage", () => {
 
     const out = await runStage(deps(agent, git), stage);
 
-    expect(agent.tiers).toEqual(["planner-med", "worker", "verifier"]);
+    expect(agent.tiers).toEqual(["planner", "worker", "verifier"]);
     expect(out.steps).toHaveLength(3);
     expect(out.steps[2]!.text).toBe("VERDICT: PASS");
   });
@@ -87,7 +87,7 @@ describe("runStage", () => {
       issue: "billing-02",
       stage: "stage-1",
       steps: [
-        step({ tier: "planner-med", commitMessage: "docs: stage-1 plan" }), // sha 1
+        step({ tier: "planner", commitMessage: "docs: stage-1 plan" }), // sha 1
         step({ tier: "worker", commitMessage: "feat: stage-1 impl" }), // sha 2
         step({ tier: "verifier" }), // no commit
       ],
@@ -120,13 +120,13 @@ describe("runStage", () => {
       issue: "billing-02",
       stage: "stage-1",
       steps: [
-        step({ tier: "planner-med", commitMessage: "docs: plan" }),
+        step({ tier: "planner", commitMessage: "docs: plan" }),
         step({ tier: "worker", commitMessage: "feat: impl" }), // errors
         step({ tier: "verifier" }), // must NOT run
       ],
     };
 
     await expect(runStage(deps(agent, git), stage)).rejects.toThrow(/error/i);
-    expect(agent.tiers).toEqual(["planner-med", "worker"]); // verifier never ran
+    expect(agent.tiers).toEqual(["planner", "worker"]); // verifier never ran
   });
 });

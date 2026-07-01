@@ -3,7 +3,7 @@
  * topology is defined.
  *
  * An implementation stage runs three steps, handing off through the worktree:
- *   1. design   (planner-med) — reads the ACTUAL code committed by prior stages
+ *   1. design   (planner) — reads the ACTUAL code committed by prior stages
  *                plus this stage's tasks, and writes a short design note naming
  *                the functions/types/files (with signatures) this stage will
  *                create or touch. Advisory: it does not commit.
@@ -35,7 +35,7 @@ export interface PlanToIssueConfig {
    *  plan's task-level criteria, which the done gate does not compare against). */
   ticketPaths: string[];
   skills: {
-    /** Skills for the per-stage design step (planner-med). */
+    /** Skills for the per-stage design step (planner). */
     designer: string[];
     worker: string[];
     verifier: string[];
@@ -112,7 +112,7 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
       // from the ticket — these are what the done gate compares the CRITERIA
       // checklist against (not the plan's task-level criteria).
       inputs: [config.planPath, ...config.ticketPaths],
-      tier: "planner-med",
+      tier: "planner",
       skills: config.skills.verifier,
       verifies: true,
       gate: verifyGate,
@@ -160,7 +160,7 @@ function mapStage(stage: PlanStage, config: PlanToIssueConfig): Stage {
 
   const design: Step = {
     ...base,
-    tier: "planner-med",
+    tier: "planner",
     skills: config.skills.designer,
     instruction:
       `Design stage ${stage.number} ("${stage.title}") of the plan (tasks ${taskIds}) BEFORE it ` +
